@@ -1,0 +1,8 @@
+[package]
+name = "dmd_core"
+version = "0.1.0"
+authors = ["Seth Morabito <web@loomcom.com>"]
+
+[dependencies]
+lazy_static = "^1.2.0"
+log = "0.4"
