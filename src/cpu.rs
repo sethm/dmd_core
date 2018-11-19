@@ -547,10 +547,9 @@ impl<'a> Cpu<'a> {
         Ok(())
     }
 
-    /// Step the CPU by one instruction
-    pub fn step(&mut self, bus: &mut Bus) -> Result<(), CpuError> {
+    fn dispatch(&mut self, bus: &mut Bus) -> Result<u8, CpuError> {
         let instr = self.decode_instruction(bus)?;
-        let pc_increment = instr.bytes as u32;
+        let pc_increment = instr.bytes;
 
         match instr.mnemonic.opcode {
             MOVB | MOVH | MOVW => {
@@ -560,9 +559,21 @@ impl<'a> Cpu<'a> {
             _ => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
         };
 
-        self.r[R_PC] += pc_increment;
+        Ok(pc_increment)
+    }
 
-        Ok(())
+    /// Step the CPU by one instruction.
+    pub fn step(&mut self, bus: &mut Bus) {
+        // TODO: On CPU Exception or Bus Error, handle each error with the appropriate exception handler routine
+        match self.dispatch(bus) {
+            Ok(i) => self.r[R_PC] += i as u32,
+            Err(CpuError::Bus(BusError::Alignment)) => {}
+            Err(CpuError::Bus(BusError::Permission)) => {}
+            Err(CpuError::Bus(BusError::NoDevice)) | Err(CpuError::Bus(BusError::Read)) | Err(CpuError::Bus(BusError::Write)) => {}
+            Err(CpuError::Exception(CpuException::IllegalOpcode)) => {}
+            Err(CpuError::Exception(CpuException::InvalidDescriptor)) => {}
+            Err(_) => {}
+        }
     }
 
     /// Set the CPU's Program Counter to the specified value
@@ -1425,15 +1436,15 @@ mod tests {
             cpu.r[2] = 0x1000;
             bus.write_word(0x1030, 0x2000).unwrap();
             bus.write_byte(0x2000, 0x5a).unwrap();
-            cpu.step(bus).unwrap();
+            cpu.step(bus);
             assert_eq!(0x60, bus.read_byte(0x304, AccessCode::AddressFetch).unwrap());
-            cpu.step(bus).unwrap();
+            cpu.step(bus);
             assert_eq!(0x5a, cpu.r[3]);
-            cpu.step(bus).unwrap();
+            cpu.step(bus);
             assert_eq!(0x7fee, cpu.r[5]);
-            cpu.step(bus).unwrap();
+            cpu.step(bus);
             assert_eq!(0x4bd, cpu.r[4]);
-            cpu.step(bus).unwrap();
+            cpu.step(bus);
             assert_eq!(0x4bd, bus.read_half(0x60, AccessCode::AddressFetch).unwrap());
         });
     }
