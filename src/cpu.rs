@@ -1,7 +1,7 @@
 use bus::{AccessCode, Bus};
 use err::{CpuError, CpuException};
-use std::collections::HashMap;
 use instr::*;
+use std::collections::HashMap;
 
 ///
 /// PSW Flags
@@ -79,9 +79,12 @@ pub enum OpType {
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Data {
     None,
-    Byte, // a.k.a. UByte
-    Half, // a.k.a. SHalf
-    Word, // a.k.a. SWord
+    Byte,
+    // a.k.a. UByte
+    Half,
+    // a.k.a. SHalf
+    Word,
+    // a.k.a. SWord
     SByte,
     UHalf,
     UWord,
@@ -429,9 +432,7 @@ impl<'a> Cpu<'a> {
                 Ok(self.r[r])
             }
             AddrMode::Absolute => Ok(op.embedded),
-            AddrMode::AbsoluteDeferred => {
-                Ok(bus.read_word(op.embedded as usize, AccessCode::AddressFetch)?)
-            }
+            AddrMode::AbsoluteDeferred => Ok(bus.read_word(op.embedded as usize, AccessCode::AddressFetch)?),
             AddrMode::FPShortOffset => Ok(self.r[R_FP] + sign_extend_byte(op.embedded as u8)),
             AddrMode::APShortOffset => Ok(self.r[R_AP] + sign_extend_byte(op.embedded as u8)),
             AddrMode::WordDisplacement => {
@@ -460,10 +461,7 @@ impl<'a> Cpu<'a> {
                     Some(v) => v,
                     None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 };
-                Ok(bus.read_word(
-                    (self.r[r] + sign_extend_halfword(op.embedded as u16)) as usize,
-                    AccessCode::AddressFetch,
-                )?)
+                Ok(bus.read_word((self.r[r] + sign_extend_halfword(op.embedded as u16)) as usize, AccessCode::AddressFetch)?)
             }
             AddrMode::ByteDisplacement => {
                 let r = match op.register {
@@ -477,10 +475,7 @@ impl<'a> Cpu<'a> {
                     Some(v) => v,
                     None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 };
-                Ok(bus.read_word(
-                    (self.r[r] + sign_extend_byte(op.embedded as u8)) as usize,
-                    AccessCode::AddressFetch,
-                )?)
+                Ok(bus.read_word((self.r[r] + sign_extend_byte(op.embedded as u8)) as usize, AccessCode::AddressFetch)?)
             }
             _ => Err(CpuError::Exception(CpuException::IllegalOpcode)),
         }
@@ -503,9 +498,7 @@ impl<'a> Cpu<'a> {
                     _ => Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 }
             }
-            AddrMode::PositiveLiteral | AddrMode::NegativeLiteral => {
-                Ok(sign_extend_byte(op.embedded as u8))
-            }
+            AddrMode::PositiveLiteral | AddrMode::NegativeLiteral => Ok(sign_extend_byte(op.embedded as u8)),
             AddrMode::WordImmediate => Ok(op.embedded),
             AddrMode::HalfwordImmediate => Ok(sign_extend_halfword(op.embedded as u16)),
             AddrMode::ByteImmediate => Ok(sign_extend_byte(op.embedded as u8)),
@@ -513,17 +506,11 @@ impl<'a> Cpu<'a> {
             _ => {
                 let eff = self.effective_address(bus, op)?;
                 match op.data_type() {
-                    Data::UWord | Data::Word => {
-                        Ok(bus.read_word(eff as usize, AccessCode::InstrFetch)?)
-                    }
-                    Data::Half => Ok(sign_extend_halfword(
-                        bus.read_half(eff as usize, AccessCode::InstrFetch)?,
-                    )),
+                    Data::UWord | Data::Word => Ok(bus.read_word(eff as usize, AccessCode::InstrFetch)?),
+                    Data::Half => Ok(sign_extend_halfword(bus.read_half(eff as usize, AccessCode::InstrFetch)?)),
                     Data::UHalf => Ok(bus.read_half(eff as usize, AccessCode::InstrFetch)? as u32),
                     Data::Byte => Ok(bus.read_byte(eff as usize, AccessCode::InstrFetch)? as u32),
-                    Data::SByte => Ok(sign_extend_byte(
-                        bus.read_byte(eff as usize, AccessCode::InstrFetch)?,
-                    )),
+                    Data::SByte => Ok(sign_extend_byte(bus.read_byte(eff as usize, AccessCode::InstrFetch)?)),
                     _ => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 }
             }
@@ -541,7 +528,7 @@ impl<'a> Cpu<'a> {
             | AddrMode::ByteImmediate
             | AddrMode::HalfwordImmediate
             | AddrMode::WordImmediate => {
-                return Err(CpuError::Exception(CpuException::IllegalOpcode))
+                return Err(CpuError::Exception(CpuException::IllegalOpcode));
             }
             _ => {
                 let eff = self.effective_address(bus, op)?;
@@ -561,7 +548,7 @@ impl<'a> Cpu<'a> {
         let pc_increment = instr.bytes as u32;
 
         match instr.mnemonic.opcode {
-            MOVB|MOVH|MOVW => {
+            MOVB | MOVH | MOVW => {
                 let val = self.read_op(bus, &instr.operands[0])?;
                 self.write_op(bus, &instr.operands[1], val)?;
             }
@@ -577,34 +564,15 @@ impl<'a> Cpu<'a> {
         self.r[R_PC] = val;
     }
 
-    fn decode_operand_literal(
-        &self,
-        bus: &mut Bus,
-        mn: &Mnemonic,
-        addr: usize,
-    ) -> Result<Operand, CpuError> {
+    fn decode_operand_literal(&self, bus: &mut Bus, mn: &Mnemonic, addr: usize) -> Result<Operand, CpuError> {
         match mn.dtype {
             Data::Byte => {
                 let b: u8 = bus.read_byte(addr, AccessCode::OperandFetch)?;
-                Ok(Operand::new(
-                    1,
-                    AddrMode::None,
-                    Data::Byte,
-                    None,
-                    None,
-                    b as u32,
-                ))
+                Ok(Operand::new(1, AddrMode::None, Data::Byte, None, None, b as u32))
             }
             Data::Half => {
                 let h: u16 = bus.read_half_unaligned(addr, AccessCode::OperandFetch)?;
-                Ok(Operand::new(
-                    2,
-                    AddrMode::None,
-                    Data::Half,
-                    None,
-                    None,
-                    h as u32,
-                ))
+                Ok(Operand::new(2, AddrMode::None, Data::Half, None, None, h as u32))
             }
             Data::Word => {
                 let w: u32 = bus.read_word_unaligned(addr, AccessCode::OperandFetch)?;
@@ -629,44 +597,27 @@ impl<'a> Cpu<'a> {
 
         // The descriptor is either 1 or 2 bytes, depending on whether this is a recursive
         // call or not.
-        let dsize = if recur { 2 } else { 1 };
+        let dsize = if recur {
+            2
+        } else {
+            1
+        };
 
         match m {
             0 | 1 | 2 | 3 => {
                 // Positive Literal
-                Ok(Operand::new(
-                    dsize,
-                    AddrMode::PositiveLiteral,
-                    dtype,
-                    etype,
-                    None,
-                    descriptor_byte as u32,
-                ))
+                Ok(Operand::new(dsize, AddrMode::PositiveLiteral, dtype, etype, None, descriptor_byte as u32))
             }
             4 => {
                 match r {
                     15 => {
                         // Word Immediate
                         let w = bus.read_word_unaligned(addr + 1, AccessCode::OperandFetch)?;
-                        Ok(Operand::new(
-                            dsize + 4,
-                            AddrMode::WordImmediate,
-                            dtype,
-                            etype,
-                            None,
-                            w,
-                        ))
+                        Ok(Operand::new(dsize + 4, AddrMode::WordImmediate, dtype, etype, None, w))
                     }
                     _ => {
                         // Register
-                        Ok(Operand::new(
-                            dsize,
-                            AddrMode::Register,
-                            dtype,
-                            etype,
-                            Some(r as usize),
-                            0,
-                        ))
+                        Ok(Operand::new(dsize, AddrMode::Register, dtype, etype, Some(r as usize), 0))
                     }
                 }
             }
@@ -675,14 +626,7 @@ impl<'a> Cpu<'a> {
                     15 => {
                         // Halfword Immediate
                         let h = bus.read_half_unaligned(addr + 1, AccessCode::OperandFetch)?;
-                        Ok(Operand::new(
-                            dsize + 2,
-                            AddrMode::HalfwordImmediate,
-                            dtype,
-                            etype,
-                            None,
-                            h as u32,
-                        ))
+                        Ok(Operand::new(dsize + 2, AddrMode::HalfwordImmediate, dtype, etype, None, h as u32))
                     }
                     11 => {
                         // Illegal
@@ -690,14 +634,7 @@ impl<'a> Cpu<'a> {
                     }
                     _ => {
                         // Register Deferred Mode
-                        Ok(Operand::new(
-                            dsize,
-                            AddrMode::RegisterDeferred,
-                            dtype,
-                            etype,
-                            Some(r as usize),
-                            0,
-                        ))
+                        Ok(Operand::new(dsize, AddrMode::RegisterDeferred, dtype, etype, Some(r as usize), 0))
                     }
                 }
             }
@@ -706,25 +643,11 @@ impl<'a> Cpu<'a> {
                     15 => {
                         // Byte Immediate
                         let b = bus.read_byte(addr + 1, AccessCode::OperandFetch)?;
-                        Ok(Operand::new(
-                            dsize + 1,
-                            AddrMode::ByteImmediate,
-                            dtype,
-                            etype,
-                            None,
-                            b as u32,
-                        ))
+                        Ok(Operand::new(dsize + 1, AddrMode::ByteImmediate, dtype, etype, None, b as u32))
                     }
                     _ => {
                         // FP Short Offset
-                        Ok(Operand::new(
-                            dsize,
-                            AddrMode::FPShortOffset,
-                            dtype,
-                            etype,
-                            Some(R_FP),
-                            r as u32,
-                        ))
+                        Ok(Operand::new(dsize, AddrMode::FPShortOffset, dtype, etype, Some(R_FP), r as u32))
                     }
                 }
             }
@@ -733,25 +656,11 @@ impl<'a> Cpu<'a> {
                     15 => {
                         // Absolute
                         let w = bus.read_word_unaligned(addr + 1, AccessCode::OperandFetch)?;
-                        Ok(Operand::new(
-                            dsize + 4,
-                            AddrMode::Absolute,
-                            dtype,
-                            etype,
-                            None,
-                            w,
-                        ))
+                        Ok(Operand::new(dsize + 4, AddrMode::Absolute, dtype, etype, None, w))
                     }
                     _ => {
                         // AP Short Offset
-                        Ok(Operand::new(
-                            dsize,
-                            AddrMode::APShortOffset,
-                            dtype,
-                            etype,
-                            Some(R_AP),
-                            r as u32,
-                        ))
+                        Ok(Operand::new(dsize, AddrMode::APShortOffset, dtype, etype, Some(R_AP), r as u32))
                     }
                 }
             }
@@ -761,14 +670,7 @@ impl<'a> Cpu<'a> {
                     _ => {
                         // Word Displacement
                         let disp = bus.read_word_unaligned(addr + 1, AccessCode::OperandFetch)?;
-                        Ok(Operand::new(
-                            dsize + 4,
-                            AddrMode::WordDisplacement,
-                            dtype,
-                            etype,
-                            Some(r as usize),
-                            disp,
-                        ))
+                        Ok(Operand::new(dsize + 4, AddrMode::WordDisplacement, dtype, etype, Some(r as usize), disp))
                     }
                 }
             }
@@ -778,14 +680,7 @@ impl<'a> Cpu<'a> {
                     _ => {
                         // Word Displacement Deferred
                         let disp = bus.read_word_unaligned(addr + 1, AccessCode::OperandFetch)?;
-                        Ok(Operand::new(
-                            dsize + 4,
-                            AddrMode::WordDisplacementDeferred,
-                            dtype,
-                            etype,
-                            Some(r as usize),
-                            disp,
-                        ))
+                        Ok(Operand::new(dsize + 4, AddrMode::WordDisplacementDeferred, dtype, etype, Some(r as usize), disp))
                     }
                 }
             }
@@ -795,14 +690,7 @@ impl<'a> Cpu<'a> {
                     _ => {
                         // Halfword Displacement
                         let disp = bus.read_half_unaligned(addr + 1, AccessCode::OperandFetch)?;
-                        Ok(Operand::new(
-                            dsize + 2,
-                            AddrMode::HalfwordDisplacement,
-                            dtype,
-                            etype,
-                            Some(r as usize),
-                            disp as u32,
-                        ))
+                        Ok(Operand::new(dsize + 2, AddrMode::HalfwordDisplacement, dtype, etype, Some(r as usize), disp as u32))
                     }
                 }
             }
@@ -829,14 +717,7 @@ impl<'a> Cpu<'a> {
                     _ => {
                         // Byte Displacement
                         let disp = bus.read_byte(addr + 1, AccessCode::OperandFetch)?;
-                        Ok(Operand::new(
-                            dsize + 1,
-                            AddrMode::ByteDisplacement,
-                            dtype,
-                            etype,
-                            Some(r as usize),
-                            disp as u32,
-                        ))
+                        Ok(Operand::new(dsize + 1, AddrMode::ByteDisplacement, dtype, etype, Some(r as usize), disp as u32))
                     }
                 }
             }
@@ -846,14 +727,7 @@ impl<'a> Cpu<'a> {
                     _ => {
                         // Byte Displacement Deferred
                         let disp = bus.read_byte(addr + 1, AccessCode::OperandFetch)?;
-                        Ok(Operand::new(
-                            dsize + 1,
-                            AddrMode::ByteDisplacementDeferred,
-                            dtype,
-                            etype,
-                            Some(r as usize),
-                            disp as u32,
-                        ))
+                        Ok(Operand::new(dsize + 1, AddrMode::ByteDisplacementDeferred, dtype, etype, Some(r as usize), disp as u32))
                     }
                 }
             }
@@ -866,27 +740,13 @@ impl<'a> Cpu<'a> {
                 7 => self.decode_operand_descriptor(bus, dtype, Some(Data::SByte), addr + 1, true),
                 15 => {
                     let w = bus.read_word_unaligned(addr + 1, AccessCode::OperandFetch)?;
-                    Ok(Operand::new(
-                        dsize + 1,
-                        AddrMode::AbsoluteDeferred,
-                        dtype,
-                        etype,
-                        None,
-                        w
-                    ))
+                    Ok(Operand::new(dsize + 1, AddrMode::AbsoluteDeferred, dtype, etype, None, w))
                 }
                 _ => Err(CpuError::Exception(CpuException::IllegalOpcode)),
             },
             15 => {
                 // Negative Literal
-                Ok(Operand::new(
-                    1,
-                    AddrMode::NegativeLiteral,
-                    dtype,
-                    etype,
-                    None,
-                    descriptor_byte as u32,
-                ))
+                Ok(Operand::new(1, AddrMode::NegativeLiteral, dtype, etype, None, descriptor_byte as u32))
             }
             _ => Err(CpuError::Exception(CpuException::IllegalOpcode)),
         }
@@ -902,9 +762,7 @@ impl<'a> Cpu<'a> {
     ) -> Result<Operand, CpuError> {
         match *ot {
             OpType::Lit => self.decode_operand_literal(bus, mn, addr),
-            OpType::Src | OpType::Dest => {
-                self.decode_operand_descriptor(bus, mn.dtype, etype, addr, false)
-            }
+            OpType::Src | OpType::Dest => self.decode_operand_descriptor(bus, mn.dtype, etype, addr, false),
         }
     }
 
@@ -957,9 +815,7 @@ impl<'a> Cpu<'a> {
                     operands,
                 })
             }
-            None => {
-                Err(CpuError::Exception(CpuException::IllegalOpcode))
-            }
+            None => Err(CpuError::Exception(CpuException::IllegalOpcode)),
         }
     }
 
@@ -1078,13 +934,8 @@ mod tests {
         let program: [u8; 2] = [0x4f, 0x06]; // BLEB 0x6
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_literal(&mut bus, OPCODES.get(&0x4F).unwrap(), 1)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(1, AddrMode::None, Data::Byte, None, None, 6)
-            );
+            let operand = cpu.decode_operand_literal(&mut bus, OPCODES.get(&0x4F).unwrap(), 1).unwrap();
+            assert_eq!(operand, Operand::new(1, AddrMode::None, Data::Byte, None, None, 6));
         })
     }
 
@@ -1093,13 +944,8 @@ mod tests {
         let program: [u8; 3] = [0x4e, 0xff, 0x0f]; // BLEH 0xfff
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_literal(&mut bus, OPCODES.get(&0x4e).unwrap(), 1)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(2, AddrMode::None, Data::Half, None, None, 0xfff)
-            );
+            let operand = cpu.decode_operand_literal(&mut bus, OPCODES.get(&0x4e).unwrap(), 1).unwrap();
+            assert_eq!(operand, Operand::new(2, AddrMode::None, Data::Half, None, None, 0xfff));
         })
     }
 
@@ -1108,13 +954,8 @@ mod tests {
         let program: [u8; 5] = [0x32, 0xff, 0x4f, 0x00, 0x00]; // SPOP 0x4fff
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_literal(&mut bus, OPCODES.get(&0x32).unwrap(), 1)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(4, AddrMode::None, Data::Word, None, None, 0x4fff)
-            );
+            let operand = cpu.decode_operand_literal(&mut bus, OPCODES.get(&0x32).unwrap(), 1).unwrap();
+            assert_eq!(operand, Operand::new(4, AddrMode::None, Data::Word, None, None, 0x4fff));
         });
     }
 
@@ -1123,13 +964,8 @@ mod tests {
         let program: [u8; 3] = [0x87, 0x04, 0x44]; // MOVB &4,%r4
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(1, AddrMode::PositiveLiteral, Data::Byte, None, None, 0x04)
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(1, AddrMode::PositiveLiteral, Data::Byte, None, None, 0x04));
         });
     }
 
@@ -1138,20 +974,8 @@ mod tests {
         let program = [0x84, 0x4f, 0x78, 0x56, 0x34, 0x12, 0x43]; // MOVW &0x12345678,%r3
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Word, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(
-                    5,
-                    AddrMode::WordImmediate,
-                    Data::Word,
-                    None,
-                    None,
-                    0x12345678
-                )
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Word, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(5, AddrMode::WordImmediate, Data::Word, None, None, 0x12345678,));
         });
     }
 
@@ -1160,13 +984,8 @@ mod tests {
         let program: [u8; 3] = [0x87, 0x04, 0x44]; // MOVB &4,%r4
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 2, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(1, AddrMode::Register, Data::Byte, None, Some(4), 0)
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 2, false).unwrap();
+            assert_eq!(operand, Operand::new(1, AddrMode::Register, Data::Byte, None, Some(4), 0));
         });
     }
 
@@ -1175,20 +994,8 @@ mod tests {
         let program = [0x84, 0x5f, 0x34, 0x12, 0x42]; // MOVW &0x1234,%r2
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Word, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(
-                    3,
-                    AddrMode::HalfwordImmediate,
-                    Data::Word,
-                    None,
-                    None,
-                    0x1234
-                )
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Word, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(3, AddrMode::HalfwordImmediate, Data::Word, None, None, 0x1234,));
         });
     }
 
@@ -1197,13 +1004,8 @@ mod tests {
         let program: [u8; 3] = [0x86, 0x52, 0x41]; // MOVH (%r2),%r1
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Half, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(1, AddrMode::RegisterDeferred, Data::Half, None, Some(2), 0)
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Half, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(1, AddrMode::RegisterDeferred, Data::Half, None, Some(2), 0));
         });
     }
 
@@ -1212,13 +1014,8 @@ mod tests {
         let program: [u8; 4] = [0x84, 0x6f, 0x28, 0x46]; // MOVW &40,%r6
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Word, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(2, AddrMode::ByteImmediate, Data::Word, None, None, 40)
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Word, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(2, AddrMode::ByteImmediate, Data::Word, None, None, 40));
         });
     }
 
@@ -1227,13 +1024,8 @@ mod tests {
         let program: [u8; 3] = [0x84, 0x6C, 0x40]; // MOVW 12(%fp),%r0
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Word, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(1, AddrMode::FPShortOffset, Data::Word, None, Some(R_FP), 12)
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Word, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(1, AddrMode::FPShortOffset, Data::Word, None, Some(R_FP), 12));
         });
     }
 
@@ -1242,13 +1034,8 @@ mod tests {
         let program: [u8; 7] = [0x87, 0x7f, 0x00, 0x01, 0x00, 0x00, 0x40]; // MOVB $0x100, %r0
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(5, AddrMode::Absolute, Data::Byte, None, None, 0x00000100)
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(5, AddrMode::Absolute, Data::Byte, None, None, 0x00000100));
         });
     }
 
@@ -1257,13 +1044,8 @@ mod tests {
         let program: [u8; 3] = [0x84, 0x74, 0x43]; // MOVW 4(%ap),%r3
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Word, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(1, AddrMode::APShortOffset, Data::Word, None, Some(R_AP), 4)
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Word, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(1, AddrMode::APShortOffset, Data::Word, None, Some(R_AP), 4));
         });
     }
 
@@ -1272,20 +1054,8 @@ mod tests {
         let program: [u8; 7] = [0x87, 0x82, 0x34, 0x12, 0x00, 0x00, 0x44]; // MOVB 0x1234(%r2),%r4
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(
-                    5,
-                    AddrMode::WordDisplacement,
-                    Data::Byte,
-                    None,
-                    Some(2),
-                    0x1234
-                )
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(5, AddrMode::WordDisplacement, Data::Byte, None, Some(2), 0x1234,));
         });
     }
 
@@ -1294,20 +1064,8 @@ mod tests {
         let program: [u8; 7] = [0x87, 0x92, 0x50, 0x40, 0x00, 0x00, 0x40]; // MOVB *0x4050(%r2),%r0
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(
-                    5,
-                    AddrMode::WordDisplacementDeferred,
-                    Data::Byte,
-                    None,
-                    Some(2),
-                    0x4050
-                )
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(5, AddrMode::WordDisplacementDeferred, Data::Byte, None, Some(2), 0x4050,));
         });
     }
 
@@ -1316,20 +1074,8 @@ mod tests {
         let program: [u8; 5] = [0x87, 0xa2, 0x34, 0x12, 0x44]; // MOVB 0x1234(%r2),%r4
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(
-                    3,
-                    AddrMode::HalfwordDisplacement,
-                    Data::Byte,
-                    None,
-                    Some(2),
-                    0x1234
-                )
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(3, AddrMode::HalfwordDisplacement, Data::Byte, None, Some(2), 0x1234,));
         });
     }
 
@@ -1338,20 +1084,8 @@ mod tests {
         let program: [u8; 5] = [0x87, 0xb2, 0x50, 0x40, 0x40]; // MOVB *0x4050(%r2),%r0
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(
-                    3,
-                    AddrMode::HalfwordDisplacementDeferred,
-                    Data::Byte,
-                    None,
-                    Some(2),
-                    0x4050
-                )
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(3, AddrMode::HalfwordDisplacementDeferred, Data::Byte, None, Some(2), 0x4050,));
         });
     }
 
@@ -1360,13 +1094,8 @@ mod tests {
         let program: [u8; 4] = [0x87, 0xc1, 0x06, 0x40]; // MOVB 6(%r1),%r0
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(2, AddrMode::ByteDisplacement, Data::Byte, None, Some(1), 6)
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(2, AddrMode::ByteDisplacement, Data::Byte, None, Some(1), 6));
         });
     }
 
@@ -1375,20 +1104,8 @@ mod tests {
         let program: [u8; 4] = [0x87, 0xd2, 0x30, 0x43]; // MOVB *0x30(%r2),%r3
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(
-                    2,
-                    AddrMode::ByteDisplacementDeferred,
-                    Data::Byte,
-                    None,
-                    Some(2),
-                    0x30
-                )
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(2, AddrMode::ByteDisplacementDeferred, Data::Byte, None, Some(2), 0x30,));
         });
     }
 
@@ -1397,35 +1114,11 @@ mod tests {
         let program: [u8; 6] = [0x87, 0xe7, 0x40, 0xe2, 0xc1, 0x04]; // MOVB {sbyte}%r0,{uhalf}4(%r1)
 
         do_with_program(&program, |cpu, mut bus| {
-            let op1 = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
-            let op2 = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 3, false)
-                .unwrap();
+            let op1 = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
+            let op2 = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 3, false).unwrap();
 
-            assert_eq!(
-                op1,
-                Operand::new(
-                    2,
-                    AddrMode::Register,
-                    Data::Byte,
-                    Some(Data::SByte),
-                    Some(0),
-                    0
-                )
-            );
-            assert_eq!(
-                op2,
-                Operand::new(
-                    3,
-                    AddrMode::ByteDisplacement,
-                    Data::Byte,
-                    Some(Data::UHalf),
-                    Some(1),
-                    4
-                )
-            );
+            assert_eq!(op1, Operand::new(2, AddrMode::Register, Data::Byte, Some(Data::SByte), Some(0), 0,));
+            assert_eq!(op2, Operand::new(3, AddrMode::ByteDisplacement, Data::Byte, Some(Data::UHalf), Some(1), 4,));
         });
     }
 
@@ -1434,13 +1127,8 @@ mod tests {
         let program: [u8; 3] = [0x87, 0xff, 0x40]; // MOVB &-1,%r0
 
         do_with_program(&program, |cpu, mut bus| {
-            let operand = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
-            assert_eq!(
-                operand,
-                Operand::new(1, AddrMode::NegativeLiteral, Data::Byte, None, None, 0xff)
-            );
+            let operand = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(1, AddrMode::NegativeLiteral, Data::Byte, None, None, 0xff));
         });
     }
 
@@ -1449,14 +1137,14 @@ mod tests {
         let program = [0x30, 0x0d]; // ENBVJMP
         do_with_program(&program, |cpu, bus| {
             let instr = cpu.decode_instruction(bus).unwrap();
-            assert_eq!(instr,
-                       DecodedInstruction {
-                           bytes: 2,
-                           mnemonic: OPCODES.get(&0x300d).unwrap(),
-                           operands: vec![]
-                       }
+            assert_eq!(
+                instr,
+                DecodedInstruction {
+                    bytes: 2,
+                    mnemonic: OPCODES.get(&0x300d).unwrap(),
+                    operands: vec![],
+                }
             );
-
         })
     }
 
@@ -1472,29 +1160,15 @@ mod tests {
                 cpu.set_pc(0);
                 let inst = cpu.decode_instruction(bus).unwrap();
                 let expected_operands = vec![
-                    Operand::new(
-                        2,
-                        AddrMode::Register,
-                        Data::Byte,
-                        Some(Data::SByte),
-                        Some(0),
-                        0,
-                    ),
-                    Operand::new(
-                        3,
-                        AddrMode::ByteDisplacement,
-                        Data::Byte,
-                        Some(Data::UHalf),
-                        Some(1),
-                        4,
-                    ),
+                    Operand::new(2, AddrMode::Register, Data::Byte, Some(Data::SByte), Some(0), 0),
+                    Operand::new(3, AddrMode::ByteDisplacement, Data::Byte, Some(Data::UHalf), Some(1), 4),
                 ];
                 assert_eq!(
                     inst,
                     DecodedInstruction {
                         bytes: 6,
                         mnemonic: OPCODES.get(&0x87).unwrap(),
-                        operands: expected_operands
+                        operands: expected_operands,
                     }
                 );
             }
@@ -1502,14 +1176,7 @@ mod tests {
                 cpu.set_pc(6);
                 let inst = cpu.decode_instruction(bus).unwrap();
                 let expected_operands = vec![
-                    Operand::new(
-                        2,
-                        AddrMode::ByteDisplacementDeferred,
-                        Data::Byte,
-                        None,
-                        Some(2),
-                        0x30,
-                    ),
+                    Operand::new(2, AddrMode::ByteDisplacementDeferred, Data::Byte, None, Some(2), 0x30),
                     Operand::new(1, AddrMode::Register, Data::Byte, None, Some(3), 0),
                 ];
                 assert_eq!(
@@ -1517,7 +1184,7 @@ mod tests {
                     DecodedInstruction {
                         bytes: 4,
                         mnemonic: OPCODES.get(&0x87).unwrap(),
-                        operands: expected_operands
+                        operands: expected_operands,
                     }
                 );
             }
@@ -1530,9 +1197,7 @@ mod tests {
             let program = [0x87, 0xe7, 0x40, 0xe2, 0x41]; // MOVB {sbyte}%r0,{uhalf}%r1
             do_with_program(&program, |cpu, mut bus| {
                 cpu.r[0] = 0xff;
-                let op = cpu
-                    .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                    .unwrap();
+                let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
                 assert_eq!(0xffffffff, cpu.read_op(bus, &op).unwrap());
             });
         }
@@ -1541,9 +1206,7 @@ mod tests {
             let program = [0x87, 0x40, 0x41]; // MOVB %r0,%r1
             do_with_program(&program, |cpu, mut bus| {
                 cpu.r[0] = 0xff;
-                let op = cpu
-                    .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                    .unwrap();
+                let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
                 assert_eq!(0xff, cpu.read_op(bus, &op).unwrap());
             });
         }
@@ -1553,9 +1216,7 @@ mod tests {
     fn reads_positive_literal_operand_data() {
         let program = [0x87, 0x04, 0x44];
         do_with_program(&program, |cpu, mut bus| {
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
             assert_eq!(4, cpu.read_op(bus, &op).unwrap() as i8);
         });
     }
@@ -1564,9 +1225,7 @@ mod tests {
     fn reads_negative_literal_operand_data() {
         let program = [0x87, 0xff, 0x44];
         do_with_program(&program, |cpu, mut bus| {
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
             assert_eq!(-1, cpu.read_op(bus, &op).unwrap() as i8);
         });
     }
@@ -1575,9 +1234,7 @@ mod tests {
     fn reads_word_immediate_operand_data() {
         let program = [0x84, 0x4f, 0x78, 0x56, 0x34, 0x12, 0x43]; // MOVW &0x12345678,%r3
         do_with_program(&program, |cpu, mut bus| {
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Word, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Word, None, 1, false).unwrap();
             assert_eq!(0x12345678, cpu.read_op(bus, &op).unwrap())
         });
     }
@@ -1586,9 +1243,7 @@ mod tests {
     fn reads_halfword_immediate_operand_data() {
         let program = [0x84, 0x5f, 0x34, 0x12, 0x42]; // MOVW &0x1234,%r2
         do_with_program(&program, |cpu, mut bus| {
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Word, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Word, None, 1, false).unwrap();
             assert_eq!(0x1234, cpu.read_op(bus, &op).unwrap())
         });
     }
@@ -1597,9 +1252,7 @@ mod tests {
     fn reads_negative_halfword_immediate_operand_data() {
         let program = [0x84, 0x5f, 0x00, 0x80, 0x42]; // MOVW &0x8000,%r2
         do_with_program(&program, |cpu, mut bus| {
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Word, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Word, None, 1, false).unwrap();
             assert_eq!(0xffff8000, cpu.read_op(bus, &op).unwrap())
         });
     }
@@ -1608,9 +1261,7 @@ mod tests {
     fn reads_byte_immediate_operand_data() {
         let program = [0x84, 0x6f, 0x28, 0x42]; // MOVW &40,%r2
         do_with_program(&program, |cpu, mut bus| {
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Word, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Word, None, 1, false).unwrap();
             assert_eq!(40, cpu.read_op(bus, &op).unwrap())
         });
     }
@@ -1619,9 +1270,7 @@ mod tests {
     fn reads_negative_byte_immediate_operand_data() {
         let program = [0x84, 0x6f, 0xff, 0x42]; // MOVW &-1,%r2
         do_with_program(&program, |cpu, mut bus| {
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Word, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Word, None, 1, false).unwrap();
             assert_eq!(-1, cpu.read_op(bus, &op).unwrap() as i32)
         });
     }
@@ -1630,9 +1279,7 @@ mod tests {
     fn reads_absolute_operand_data() {
         let program = [0x87, 0x7f, 0x00, 0x01, 0x00, 0x00, 0x04]; // MOVB $0x100,%r0
         do_with_program(&program, |cpu, mut bus| {
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
             assert_eq!(0x100, cpu.read_op(bus, &op).unwrap());
         });
     }
@@ -1643,9 +1290,7 @@ mod tests {
         do_with_program(&program, |cpu, mut bus| {
             bus.write_word(0x100, 0x300).unwrap();
             bus.write_byte(0x300, 0x1f).unwrap();
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
             assert_eq!(0x1f, cpu.read_op(bus, &op).unwrap());
         });
     }
@@ -1656,9 +1301,7 @@ mod tests {
         do_with_program(&program, |cpu, mut bus| {
             cpu.r[1] = 0x300;
             bus.write_byte(0x306, 0x1f).unwrap();
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
             assert_eq!(0x1f, cpu.read_op(bus, &op).unwrap());
         });
     }
@@ -1670,12 +1313,9 @@ mod tests {
             cpu.r[2] = 0x300;
             bus.write_word(0x330, 0x1000).unwrap();
             bus.write_byte(0x1000, 0x5a).unwrap();
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
             assert_eq!(0x5a, cpu.read_op(bus, &op).unwrap());
         })
-
     }
 
     #[test]
@@ -1684,9 +1324,7 @@ mod tests {
         do_with_program(&program, |cpu, mut bus| {
             cpu.r[2] = 0x300;
             bus.write_byte(0x1401, 0x1f).unwrap();
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
             assert_eq!(0x1f, cpu.read_op(bus, &op).unwrap());
         });
     }
@@ -1698,9 +1336,7 @@ mod tests {
             cpu.r[2] = 0x300;
             bus.write_word(0x500, 0x1000).unwrap();
             bus.write_byte(0x1000, 0x5a).unwrap();
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
             assert_eq!(0x5a, cpu.read_op(bus, &op).unwrap());
         })
     }
@@ -1711,9 +1347,7 @@ mod tests {
         do_with_program(&program, |cpu, mut bus| {
             cpu.r[2] = 0x300;
             bus.write_byte(0x1401, 0x1f).unwrap();
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
             assert_eq!(0x1f, cpu.read_op(bus, &op).unwrap());
         });
     }
@@ -1725,9 +1359,7 @@ mod tests {
             cpu.r[2] = 0x300;
             bus.write_word(0x500, 0x1000).unwrap();
             bus.write_byte(0x1000, 0x5a).unwrap();
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 1, false).unwrap();
             assert_eq!(0x5a, cpu.read_op(bus, &op).unwrap());
         })
     }
@@ -1738,9 +1370,7 @@ mod tests {
         do_with_program(&program, |cpu, mut bus| {
             cpu.r[R_AP] = 0x1000;
             bus.write_word(0x1004, 0x12345678).unwrap();
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Word, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Word, None, 1, false).unwrap();
             assert_eq!(0x12345678, cpu.read_op(bus, &op).unwrap());
         });
     }
@@ -1751,9 +1381,7 @@ mod tests {
         do_with_program(&program, |cpu, mut bus| {
             cpu.r[R_FP] = 0x1000;
             bus.write_word(0x100c, 0x12345678).unwrap();
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Word, None, 1, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Word, None, 1, false).unwrap();
             assert_eq!(0x12345678, cpu.read_op(bus, &op).unwrap());
         });
     }
@@ -1763,9 +1391,7 @@ mod tests {
         let program = [0x40];
         do_with_program(&program, |cpu, mut bus| {
             cpu.r[0] = 0;
-            let op = cpu
-                .decode_operand_descriptor(&mut bus, Data::Byte, None, 0, false)
-                .unwrap();
+            let op = cpu.decode_operand_descriptor(&mut bus, Data::Byte, None, 0, false).unwrap();
             cpu.write_op(bus, &op, 0x5a).unwrap();
             assert_eq!(0x5a, cpu.r[0]);
         });
@@ -1775,10 +1401,10 @@ mod tests {
     fn acceptance_move() {
         let program = [
             0x87, 0xe7, 0x40, 0xe2, 0xc1, 0x04, // MOVB {sbyte}%r0,{uhalf}4(%r1)
-            0x87, 0xd2, 0x30, 0x43,             // MOVB *0x30(%r2),%r3
-            0x84, 0x5f, 0xee, 0x7f, 0x45,       // MOVW &0x7fee,%r5
-            0x86, 0x5f, 0xbd, 0x04, 0x44,       // MOVH &0x4bd,%r4
-            0x86, 0x44, 0x50                    // MOVH %r4,(%r0)
+            0x87, 0xd2, 0x30, 0x43, // MOVB *0x30(%r2),%r3
+            0x84, 0x5f, 0xee, 0x7f, 0x45, // MOVW &0x7fee,%r5
+            0x86, 0x5f, 0xbd, 0x04, 0x44, // MOVH &0x4bd,%r4
+            0x86, 0x44, 0x50, // MOVH %r4,(%r0)
         ];
 
         do_with_program(&program, |cpu, bus| {
@@ -1799,6 +1425,4 @@ mod tests {
             assert_eq!(0x4bd, bus.read_half(0x60, AccessCode::AddressFetch).unwrap());
         });
     }
-
-
 }
