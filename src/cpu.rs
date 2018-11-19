@@ -1,5 +1,5 @@
 use bus::{AccessCode, Bus};
-use err::{CpuError, CpuException};
+use err::*;
 use instr::*;
 use std::collections::HashMap;
 
@@ -391,7 +391,7 @@ impl<'a> Cpu<'a> {
     }
 
     /// Reset the CPU.
-    pub fn reset(&mut self, bus: &mut Bus) -> Result<(), CpuError> {
+    pub fn reset(&mut self, bus: &mut Bus) -> Result<(), BusError> {
         //
         // The WE32100 Manual, Page 2-52, describes the reset process
         //
