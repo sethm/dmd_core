@@ -167,18 +167,12 @@ fn sign_extend_halfword(data: u16) -> u32 {
     ((data as i16) as i32) as u32
 }
 
-#[allow(dead_code)]
-fn zero_extend_halfword(data: u16) -> u32 {
-    data as u32
-}
-
 fn sign_extend_byte(data: u8) -> u32 {
     ((data as i8) as i32) as u32
 }
 
-#[allow(dead_code)]
-fn zero_extend_byte(data: u8) -> u32 {
-    data as u32
+fn add_offset(val: u32, offset: u32) -> u32 {
+    ((val as i32).wrapping_add(offset as i32)) as u32
 }
 
 lazy_static! {
@@ -435,49 +429,52 @@ impl<'a> Cpu<'a> {
             }
             AddrMode::Absolute => Ok(op.embedded),
             AddrMode::AbsoluteDeferred => Ok(bus.read_word(op.embedded as usize, AccessCode::AddressFetch)?),
-            AddrMode::FPShortOffset => Ok(self.r[R_FP] + sign_extend_byte(op.embedded as u8)),
-            AddrMode::APShortOffset => Ok(self.r[R_AP] + sign_extend_byte(op.embedded as u8)),
+            AddrMode::FPShortOffset => Ok(add_offset(self.r[R_FP], sign_extend_byte(op.embedded as u8))),
+            AddrMode::APShortOffset => Ok(add_offset(self.r[R_AP], sign_extend_byte(op.embedded as u8))),
             AddrMode::WordDisplacement => {
                 let r = match op.register {
                     Some(v) => v,
                     None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 };
-                Ok(self.r[r] + op.embedded)
+                Ok(add_offset(self.r[r], op.embedded))
             }
             AddrMode::WordDisplacementDeferred => {
                 let r = match op.register {
                     Some(v) => v,
                     None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 };
-                Ok(bus.read_word((self.r[r] + op.embedded) as usize, AccessCode::AddressFetch)?)
+                Ok(bus.read_word((add_offset(self.r[r], op.embedded)) as usize, AccessCode::AddressFetch)?)
             }
             AddrMode::HalfwordDisplacement => {
                 let r = match op.register {
                     Some(v) => v,
                     None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 };
-                Ok(self.r[r] + sign_extend_halfword(op.embedded as u16))
+                Ok(add_offset(self.r[r], sign_extend_halfword(op.embedded as u16)))
             }
             AddrMode::HalfwordDisplacementDeferred => {
                 let r = match op.register {
                     Some(v) => v,
                     None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 };
-                Ok(bus.read_word((self.r[r] + sign_extend_halfword(op.embedded as u16)) as usize, AccessCode::AddressFetch)?)
+                Ok(bus.read_word(
+                    (add_offset(self.r[r], sign_extend_halfword(op.embedded as u16))) as usize,
+                    AccessCode::AddressFetch,
+                )?)
             }
             AddrMode::ByteDisplacement => {
                 let r = match op.register {
                     Some(v) => v,
                     None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 };
-                Ok(self.r[r] + sign_extend_byte(op.embedded as u8))
+                Ok(add_offset(self.r[r], sign_extend_byte(op.embedded as u8)))
             }
             AddrMode::ByteDisplacementDeferred => {
                 let r = match op.register {
                     Some(v) => v,
                     None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 };
-                Ok(bus.read_word((self.r[r] + sign_extend_byte(op.embedded as u8)) as usize, AccessCode::AddressFetch)?)
+                Ok(bus.read_word(add_offset(self.r[r], sign_extend_byte(op.embedded as u8)) as usize, AccessCode::AddressFetch)?)
             }
             _ => Err(CpuError::Exception(CpuException::IllegalOpcode)),
         }
@@ -505,7 +502,6 @@ impl<'a> Cpu<'a> {
             AddrMode::WordImmediate => Ok(op.embedded),
             AddrMode::HalfwordImmediate => Ok(sign_extend_halfword(op.embedded as u16)),
             AddrMode::ByteImmediate => Ok(sign_extend_byte(op.embedded as u8)),
-            AddrMode::Absolute => Ok(op.embedded),
             _ => {
                 let eff = self.effective_address(bus, op)?;
                 match op.data_type() {
@@ -547,11 +543,323 @@ impl<'a> Cpu<'a> {
         Ok(())
     }
 
-    fn dispatch(&mut self, bus: &mut Bus) -> Result<u8, CpuError> {
+    fn add(&mut self, bus: &mut Bus, a: u32, b: u32, dst: &Operand) -> Result<(), CpuError> {
+        let result: u64 = a as u64 + b as u64;
+
+        self.write_op(bus, dst, result as u32)?;
+
+        self.set_nz_flags(result as u32, dst);
+
+        match dst.data_type {
+            Data::Word | Data::UWord => {
+                self.set_c_flag(result > 0xffffffff);
+                self.set_v_flag((((a ^ !b) & (a ^ result as u32)) & 0x80000000) != 0);
+            }
+            Data::Half | Data::UHalf => {
+                self.set_c_flag(result > 0xffff);
+                self.set_v_flag((((a ^ !b) & (a ^ result as u32)) & 0x8000) != 0);
+            }
+            Data::Byte | Data::SByte => {
+                self.set_c_flag(result > 0xff);
+                self.set_v_flag((((a ^ !b) & (a ^ result as u32)) & 0x80) != 0);
+            }
+            _ => {
+                return Err(CpuError::Exception(CpuException::IllegalOpcode));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn dispatch(&mut self, bus: &mut Bus) -> Result<i32, CpuError> {
         let instr = self.decode_instruction(bus)?;
-        let pc_increment = instr.bytes;
+        let mut pc_increment: i32 = instr.bytes as i32;
 
         match instr.mnemonic.opcode {
+            NOP => {
+                pc_increment = 1;
+            }
+            NOP2 => {
+                pc_increment = 2;
+            }
+            NOP3 => {
+                pc_increment = 3;
+            }
+            ADDW2 | ADDH2 | ADDB2 => {
+                let a = self.read_op(bus, &instr.operands[0])?;
+                let b = self.read_op(bus, &instr.operands[1])?;
+                self.add(bus, a, b, &instr.operands[1])?;
+            }
+            ADDW3 | ADDH3 | ADDB3 => {
+                let a = self.read_op(bus, &instr.operands[0])?;
+                let b = self.read_op(bus, &instr.operands[1])?;
+                self.add(bus, a, b, &instr.operands[2])?
+            }
+            ALSW3 => {
+                let src1 = &instr.operands[0];
+                let src2 = &instr.operands[1];
+                let dst = &instr.operands[2];
+
+                let a = self.read_op(bus, src1)?;
+                let b = self.read_op(bus, src2)?;
+                let result = (a as u64) << (b & 0x1f);
+                self.write_op(bus, dst, result as u32)?;
+
+                self.set_nz_flags(result as u32, dst);
+                self.set_c_flag(false);
+                self.set_v_flag_op(result as u32, dst);
+            }
+            ANDW2 | ANDH2 | ANDB2 => {
+                let src = &instr.operands[0];
+                let dst = &instr.operands[1];
+
+                let a = self.read_op(bus, src)?;
+                let b = self.read_op(bus, dst)?;
+
+                let result = a & b;
+
+                self.write_op(bus, dst, result)?;
+
+                self.set_nz_flags(result, dst);
+                self.set_c_flag(false);
+                self.set_v_flag_op(result, dst);
+            }
+            ANDW3 | ANDH3 | ANDB3 => {
+                let src1 = &instr.operands[0];
+                let src2 = &instr.operands[1];
+                let dst = &instr.operands[2];
+
+                let a = self.read_op(bus, src1)?;
+                let b = self.read_op(bus, src2)?;
+
+                let result = a & b;
+
+                self.write_op(bus, dst, result)?;
+
+                self.set_nz_flags(result, dst);
+                self.set_c_flag(false);
+                self.set_v_flag_op(result, dst);
+            }
+            BEH | BEH_D => {
+                if self.z_flag() {
+                    pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                }
+            }
+            BEB | BEB_D => {
+                if self.z_flag() {
+                    pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                }
+            }
+            BGH => {
+                if !(self.n_flag() || self.z_flag()) {
+                    pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                }
+            }
+            BGB => {
+                if !(self.n_flag() || self.z_flag()) {
+                    pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                }
+            }
+            BGEH => {
+                if !self.n_flag() || self.z_flag() {
+                    pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                }
+            }
+            BGEB => {
+                if !self.n_flag() || self.z_flag() {
+                    pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                }
+            }
+            BGEUH => {
+                if !self.c_flag() {
+                    pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                }
+            }
+            BGEUB => {
+                if !self.c_flag() {
+                    pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                }
+            }
+            BGUH => {
+                if !(self.c_flag() || self.z_flag()) {
+                    pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                }
+            }
+            BGUB => {
+                if !(self.c_flag() || self.z_flag()) {
+                    pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                }
+            }
+            BITW | BITH | BITB => {
+                let src1 = &instr.operands[0];
+                let src2 = &instr.operands[1];
+
+                let a = self.read_op(bus, src1)?;
+                let b = self.read_op(bus, src2)?;
+                let result = a & b;
+
+                self.set_nz_flags(result, src2);
+                self.set_c_flag(false);
+                self.set_v_flag(false);
+            }
+            BLH => {
+                if self.n_flag() && !self.z_flag() {
+                    pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                }
+            }
+            BLB => {
+                if self.n_flag() && !self.z_flag() {
+                    pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                }
+            }
+            BLEH => {
+                if self.n_flag() || self.z_flag() {
+                    pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                }
+            }
+            BLEB => {
+                if self.n_flag() || self.z_flag() {
+                    pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                }
+            }
+            BLEUH => {
+                if self.c_flag() || self.z_flag() {
+                    pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                }
+            }
+            BLEUB => {
+                if self.c_flag() || self.z_flag() {
+                    pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                }
+            }
+            BLUH => {
+                if self.c_flag() {
+                    pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                }
+            }
+            BLUB => {
+                if self.c_flag() {
+                    pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                }
+            }
+            BNEH | BNEH_D => {
+                if !self.z_flag() {
+                    pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                }
+            }
+            BNEB | BNEB_D => {
+                if !self.z_flag() {
+                    pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                }
+            }
+            BPT | HALT => {
+                // TODO: Breakpoint Trap
+            }
+            BRH => {
+                pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+            }
+            BRB => {
+                pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+            }
+            BSBH => {
+                let offset = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                let return_pc = (self.r[R_PC] as i32 + pc_increment) as u32;
+                self.stack_push(bus, return_pc)?;
+                pc_increment = offset;
+            }
+            BSBB => {
+                let offset = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                let return_pc = (self.r[R_PC] as i32 + pc_increment) as u32;
+                self.stack_push(bus, return_pc)?;
+                pc_increment = offset;
+            }
+            BVCH => {
+                if !self.v_flag() {
+                    pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                }
+            }
+            BVCB => {
+                if !self.v_flag() {
+                    pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                }
+            }
+            BVSH => {
+                if self.v_flag() {
+                    pc_increment = sign_extend_halfword(instr.operands[0].embedded as u16) as i32;
+                }
+            }
+            BVSB => {
+                if self.v_flag() {
+                    pc_increment = sign_extend_byte(instr.operands[0].embedded as u8) as i32;
+                }
+            }
+            CALL => {
+                let a = self.effective_address(bus, &instr.operands[0])?;
+                let b = self.effective_address(bus, &instr.operands[1])?;
+
+                let return_pc = (self.r[R_PC] as i32 + pc_increment) as u32;
+
+                bus.write_word((self.r[R_SP] + 4) as usize, self.r[R_AP])?;
+                bus.write_word(self.r[R_SP] as usize, return_pc)?;
+
+                self.r[R_SP] += 8;
+                self.r[R_PC] = b;
+                self.r[R_AP] = a;
+
+                pc_increment = 0;
+            }
+            CFLUSH => {}
+            CALLPS => {
+                // TODO: CALLPS Implementation
+            }
+            CLRW | CLRH | CLRB => {
+                self.write_op(bus, &instr.operands[0], 0)?;
+                self.set_n_flag(false);
+                self.set_z_flag(true);
+                self.set_c_flag(false);
+                self.set_v_flag(false);
+            }
+            CMPW => {
+                let a = self.read_op(bus, &instr.operands[0])?;
+                let b = self.read_op(bus, &instr.operands[1])?;
+
+                self.set_z_flag(b == a);
+                self.set_n_flag((b as i32) < (a as i32));
+                self.set_c_flag(b < a);
+                self.set_v_flag(false);
+            }
+            CMPH => {
+                let a = self.read_op(bus, &instr.operands[0])?;
+                let b = self.read_op(bus, &instr.operands[1])?;
+
+                self.set_z_flag((b as u16) == (a as u16));
+                self.set_n_flag((b as i16) < (a as i16));
+                self.set_c_flag((b as u16) < (a as u16));
+                self.set_v_flag(false);
+            }
+            CMPB => {
+                let a = self.read_op(bus, &instr.operands[0])?;
+                let b = self.read_op(bus, &instr.operands[1])?;
+
+                self.set_z_flag((b as u8) == (a as u8));
+                self.set_n_flag((b as i8) < (a as i8));
+                self.set_c_flag((b as u8) < (a as u8));
+                self.set_v_flag(false);
+            }
+            DECW | DECH | DECB => {
+                // TODO: Subtrace
+            }
+            RET => {
+                let a = self.r[R_AP];
+                let b = bus.read_word((self.r[R_SP] - 4) as usize, AccessCode::AddressFetch)?;
+                let c = bus.read_word((self.r[R_SP] - 8) as usize, AccessCode::AddressFetch)?;
+
+                self.r[R_AP] = b;
+                self.r[R_PC] = c;
+                self.r[R_SP] = a;
+
+                pc_increment = 0;
+            }
             MOVB | MOVH | MOVW => {
                 let val = self.read_op(bus, &instr.operands[0])?;
                 self.write_op(bus, &instr.operands[1], val)?;
@@ -566,7 +874,7 @@ impl<'a> Cpu<'a> {
     pub fn step(&mut self, bus: &mut Bus) {
         // TODO: On CPU Exception or Bus Error, handle each error with the appropriate exception handler routine
         match self.dispatch(bus) {
-            Ok(i) => self.r[R_PC] += i as u32,
+            Ok(i) => self.r[R_PC] = (self.r[R_PC] as i32 + i) as u32,
             Err(CpuError::Bus(BusError::Alignment)) => {}
             Err(CpuError::Bus(BusError::Permission)) => {}
             Err(CpuError::Bus(BusError::NoDevice)) | Err(CpuError::Bus(BusError::Read)) | Err(CpuError::Bus(BusError::Write)) => {}
@@ -762,7 +1070,7 @@ impl<'a> Cpu<'a> {
                 7 => self.decode_descriptor_operand(bus, dtype, Some(Data::SByte), addr + 1, true),
                 15 => {
                     let w = bus.read_word_unaligned(addr + 1, AccessCode::OperandFetch)?;
-                    Ok(Operand::new(dsize + 1, AddrMode::AbsoluteDeferred, dtype, etype, None, w))
+                    Ok(Operand::new(dsize + 4, AddrMode::AbsoluteDeferred, dtype, etype, None, w))
                 }
                 _ => Err(CpuError::Exception(CpuException::IllegalOpcode)),
             },
@@ -843,12 +1151,47 @@ impl<'a> Cpu<'a> {
     }
 
     /// Convenience operations on flags.
+    fn set_v_flag_op(&mut self, val: u32, op: &Operand) {
+        match op.data_type {
+            Data::Word | Data::UWord => self.set_v_flag(false),
+            Data::Half | Data::UHalf => self.set_v_flag(val > 0xffff),
+            Data::Byte | Data::SByte => self.set_v_flag(val > 0xff),
+            Data::None => {
+                // Intentionally ignored
+            }
+        }
+    }
+
+    fn set_nz_flags(&mut self, val: u32, op: &Operand) {
+        match op.data_type {
+            Data::Word | Data::UWord => {
+                self.set_n_flag((val & 0x80000000) != 0);
+                self.set_z_flag(val == 0);
+            }
+            Data::Half | Data::UHalf => {
+                self.set_n_flag((val & 0x8000) != 0);
+                self.set_z_flag((val & 0xffff) == 0);
+            }
+            Data::Byte | Data::SByte => {
+                self.set_n_flag((val & 0x80) != 0);
+                self.set_z_flag((val & 0xff) == 0);
+            }
+            Data::None => {
+                // Intentionally ignored
+            }
+        }
+    }
+
     fn set_c_flag(&mut self, set: bool) {
         if set {
             self.r[R_PSW] |= F_C;
         } else {
             self.r[R_PSW] &= !F_C;
         }
+    }
+
+    fn c_flag(&self) -> bool {
+        ((self.r[R_PSW] & F_C) >> 18) == 1
     }
 
     fn set_v_flag(&mut self, set: bool) {
@@ -859,6 +1202,10 @@ impl<'a> Cpu<'a> {
         }
     }
 
+    fn v_flag(&self) -> bool {
+        ((self.r[R_PSW] & F_V) >> 19) == 1
+    }
+
     fn set_z_flag(&mut self, set: bool) {
         if set {
             self.r[R_PSW] |= F_Z;
@@ -867,12 +1214,20 @@ impl<'a> Cpu<'a> {
         }
     }
 
+    fn z_flag(&self) -> bool {
+        ((self.r[R_PSW] & F_Z) >> 20) == 1
+    }
+
     fn set_n_flag(&mut self, set: bool) {
         if set {
             self.r[R_PSW] |= F_N;
         } else {
             self.r[R_PSW] &= !F_N;
         }
+    }
+
+    fn n_flag(&self) -> bool {
+        ((self.r[R_PSW] & F_N) >> 21) == 1
     }
 
     pub fn set_isc(&mut self, val: u32) {
@@ -886,6 +1241,18 @@ impl<'a> Cpu<'a> {
         self.r[R_PSW] |= (old_level & 3) << 9; // Set PM
         self.r[R_PSW] &= !F_CM; // Clear CM
         self.r[R_PSW] |= (val & 3) << 11; // Set CM
+    }
+
+    pub fn stack_push(&mut self, bus: &mut Bus, val: u32) -> Result<(), CpuError> {
+        bus.write_word(self.r[R_SP] as usize, val)?;
+        self.r[R_SP] += 4;
+        Ok(())
+    }
+
+    pub fn sack_pop(&mut self, bus: &mut Bus) -> Result<u32, CpuError> {
+        let result = bus.read_word((self.r[R_SP] - 4) as usize, AccessCode::AddressFetch)?;
+        self.r[R_SP] -= 4;
+        Ok(result)
     }
 }
 
@@ -911,11 +1278,9 @@ mod tests {
     }
 
     #[test]
-    fn zero_and_sign_extension() {
+    fn sign_extension() {
         assert_eq!(0xffff8000, sign_extend_halfword(0x8000));
-        assert_eq!(0x00008000, zero_extend_halfword(0x8000));
         assert_eq!(0xffffff80, sign_extend_byte(0x80));
-        assert_eq!(0x00000080, zero_extend_byte(0x80));
     }
 
     #[test]
@@ -1063,6 +1428,16 @@ mod tests {
     }
 
     #[test]
+    fn decodes_absolute_deferred_operand() {
+        let program = [0x87, 0xef, 0x00, 0x01, 0x00, 0x00, 0x40]; // MOVB *$0x100,%r0
+
+        do_with_program(&program, |cpu, mut bus| {
+            let operand = cpu.decode_descriptor_operand(&mut bus, Data::Byte, None, 1, false).unwrap();
+            assert_eq!(operand, Operand::new(5, AddrMode::AbsoluteDeferred, Data::Byte, None, None, 0x00000100));
+        });
+    }
+
+    #[test]
     fn decodes_ap_short_offset_operand() {
         let program: [u8; 3] = [0x84, 0x74, 0x43]; // MOVW 4(%ap),%r3
 
@@ -1128,7 +1503,7 @@ mod tests {
 
         do_with_program(&program, |cpu, mut bus| {
             let operand = cpu.decode_descriptor_operand(&mut bus, Data::Byte, None, 1, false).unwrap();
-            assert_eq!(operand, Operand::new(2, AddrMode::ByteDisplacementDeferred, Data::Byte, None, Some(2), 0x30,));
+            assert_eq!(operand, Operand::new(2, AddrMode::ByteDisplacementDeferred, Data::Byte, None, Some(2), 0x30));
         });
     }
 
@@ -1302,14 +1677,15 @@ mod tests {
     fn reads_absolute_operand_data() {
         let program = [0x87, 0x7f, 0x00, 0x01, 0x00, 0x00, 0x04]; // MOVB $0x100,%r0
         do_with_program(&program, |cpu, mut bus| {
+            bus.write_byte(0x100, 0x5a).unwrap();
             let op = cpu.decode_descriptor_operand(&mut bus, Data::Byte, None, 1, false).unwrap();
-            assert_eq!(0x100, cpu.read_op(bus, &op).unwrap());
+            assert_eq!(0x5a, cpu.read_op(bus, &op).unwrap());
         });
     }
 
     #[test]
     fn reads_absolute_deferred_operand_data() {
-        let program = [0x87, 0xef, 0x00, 0x01, 0x00, 0x00, 0x41]; // MOVGB *$0x100,%r0
+        let program = [0x87, 0xef, 0x00, 0x01, 0x00, 0x00, 0x41]; // MOVB *$0x100,%r0
         do_with_program(&program, |cpu, mut bus| {
             bus.write_word(0x100, 0x300).unwrap();
             bus.write_byte(0x300, 0x1f).unwrap();
@@ -1320,12 +1696,18 @@ mod tests {
 
     #[test]
     fn reads_byte_displacement_operand_data() {
-        let program = [0x87, 0xc1, 0x06, 0x40]; // MOVB 6(%r1),%r0
+        let program = [
+            0x87, 0xc1, 0x06, 0x40, // MOVB 6(%r1),%r0
+            0x87, 0xc1, 0xfe, 0x40, // MOVB -2(%r1),%r0
+        ];
         do_with_program(&program, |cpu, mut bus| {
             cpu.r[1] = 0x300;
             bus.write_byte(0x306, 0x1f).unwrap();
-            let op = cpu.decode_descriptor_operand(&mut bus, Data::Byte, None, 1, false).unwrap();
-            assert_eq!(0x1f, cpu.read_op(bus, &op).unwrap());
+            bus.write_byte(0x2fe, 0xc5).unwrap();
+            let op1 = cpu.decode_descriptor_operand(&mut bus, Data::Byte, None, 1, false).unwrap();
+            let op2 = cpu.decode_descriptor_operand(&mut bus, Data::Byte, None, 5, false).unwrap();
+            assert_eq!(0x1f, cpu.read_op(bus, &op1).unwrap());
+            assert_eq!(0xc5, cpu.read_op(bus, &op2).unwrap());
         });
     }
 
@@ -1421,31 +1803,272 @@ mod tests {
     }
 
     #[test]
-    fn acceptance_move() {
+    fn movw_acceptance() {
         let program = [
-            0x87, 0xe7, 0x40, 0xe2, 0xc1, 0x04, // MOVB {sbyte}%r0,{uhalf}4(%r1)
-            0x87, 0xd2, 0x30, 0x43, // MOVB *0x30(%r2),%r3
-            0x84, 0x5f, 0xee, 0x7f, 0x45, // MOVW &0x7fee,%r5
-            0x86, 0x5f, 0xbd, 0x04, 0x44, // MOVH &0x4bd,%r4
-            0x86, 0x44, 0x50, // MOVH %r4,(%r0)
+            0x84, 0x01, 0x40, // MOVW &1,%r0
+            0x84, 0xff, 0x41, // MOVW &-1,%r1
+            0x84, 0xff, 0x42, // MOVW &0xff,%r2
+            0x84, 0x5f, 0xff, 0x01, 0x43, // MOVW &0x1ff,%r3
+            0x84, 0x4f, 0x78, 0x56, 0x34, 0x12, 0x44, // MOVW &0x12345678,%r4
         ];
-
-        do_with_program(&program, |cpu, bus| {
-            cpu.r[0] = 0x60;
-            cpu.r[1] = 0x300;
-            cpu.r[2] = 0x1000;
-            bus.write_word(0x1030, 0x2000).unwrap();
-            bus.write_byte(0x2000, 0x5a).unwrap();
-            cpu.step(bus);
-            assert_eq!(0x60, bus.read_byte(0x304, AccessCode::AddressFetch).unwrap());
-            cpu.step(bus);
-            assert_eq!(0x5a, cpu.r[3]);
-            cpu.step(bus);
-            assert_eq!(0x7fee, cpu.r[5]);
-            cpu.step(bus);
-            assert_eq!(0x4bd, cpu.r[4]);
-            cpu.step(bus);
-            assert_eq!(0x4bd, bus.read_half(0x60, AccessCode::AddressFetch).unwrap());
+        do_with_program(&program, |cpu, mut bus| {
+            cpu.step(&mut bus);
+            assert_eq!(cpu.r[0], 1);
+            cpu.step(&mut bus);
+            assert_eq!(cpu.r[1] as i32, -1);
+            cpu.step(&mut bus);
+            assert_eq!(cpu.r[2] as i32, -1);
+            cpu.step(&mut bus);
+            assert_eq!(cpu.r[3], 0x1ff);
+            cpu.step(&mut bus);
+            assert_eq!(cpu.r[4], 0x12345678);
         });
     }
+
+    #[test]
+    fn movh_acceptance() {
+        let program = [
+            0x86, 0x01, 0x40, // MOVH &1,%r0
+            0x86, 0xff, 0x41, // MOVH &-1,%r1
+            0x86, 0xff, 0x42, // MOVH &0xff,%r2
+            0x86, 0x5f, 0xff, 0x01, 0x43, // MOVH &0x1ff,%r3
+            0x86, 0x5f, 0x00, 0x80, 0x44, // MOVH &0x8000,%r4
+            0x86, 0x7f, 0x00, 0x01, 0x00, 0x00, 0x40, // MOVH $0x100,%r0
+            0x86, 0xef, 0x00, 0x02, 0x00, 0x00, 0x41, // MOVH *$0x200,%r1
+            0x86, 0xc1, 0x06, 0x42, // MOVH 6(%r1),%r2
+        ];
+        do_with_program(&program, |cpu, mut bus| {
+            // Setup
+            bus.write_word(0x100, 0x12345678).unwrap();
+            bus.write_word(0x200, 0x2000).unwrap();
+            bus.write_word(0x2000, 0x3000).unwrap();
+            bus.write_half(0x3006, 0xabcd).unwrap();
+
+            cpu.step(&mut bus);
+            assert_eq!(1, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(-1, cpu.r[1] as i32);
+            cpu.step(&mut bus);
+            assert_eq!(-1, cpu.r[2] as i32);
+            cpu.step(&mut bus);
+            assert_eq!(0x1ff, cpu.r[3]);
+            cpu.step(&mut bus);
+            assert_eq!(0xffff8000, cpu.r[4]);
+            cpu.step(&mut bus);
+            assert_eq!(0x5678, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x3000, cpu.r[1]);
+            cpu.step(&mut bus);
+            assert_eq!(0xffffabcd, cpu.r[2]);
+        });
+    }
+
+    #[test]
+    fn movb_acceptance() {
+        let program = [
+            0x87, 0x01, 0x40, // MOVB &1,%r0
+            0x87, 0xff, 0x41, // MOVB &-1,%r1
+            0x87, 0xff, 0x42, // MOVB &0xff,%r2
+            0x87, 0x1f, 0x43, // MOVB &0x1f,%r3
+            0x87, 0x7f, 0x00, 0x01, 0x00, 0x00, 0x40, // MOVB $0x100,%r0
+            0x87, 0xef, 0x00, 0x02, 0x00, 0x00, 0x41, // MOVB *$0x200,%r1
+            0x87, 0xc6, 0x05, 0x42, // MOVB 5(%r6),%r2
+            0x87, 0xd6, 0x08, 0x43, // MOVB *8(%r6),%r3
+            0x87, 0xc6, 0xff, 0x44, // MOVB -1(%r6),%r4
+        ];
+        do_with_program(&program, |cpu, mut bus| {
+            // Setup
+            bus.write_byte(0x100, 0x5a).unwrap();
+            bus.write_word(0x200, 0x300).unwrap();
+            bus.write_byte(0x300, 0xa5).unwrap();
+            bus.write_byte(0x3005, 0xe0).unwrap();
+            bus.write_word(0x3008, 0x280).unwrap();
+            bus.write_byte(0x280, 0x2f).unwrap();
+            bus.write_byte(0x2fff, 0xba).unwrap();
+            cpu.r[6] = 0x3000;
+
+            cpu.step(&mut bus);
+            assert_eq!(1, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(-1, cpu.r[1] as i32);
+            cpu.step(&mut bus);
+            assert_eq!(-1, cpu.r[2] as i32);
+            cpu.step(&mut bus);
+            assert_eq!(0x1f, cpu.r[3]);
+            cpu.step(&mut bus);
+            assert_eq!(0x5a, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0xa5, cpu.r[1]);
+            cpu.step(&mut bus);
+            assert_eq!(0xe0, cpu.r[2]);
+            cpu.step(&mut bus);
+            assert_eq!(0x2f, cpu.r[3]);
+            cpu.step(&mut bus);
+            assert_eq!(0xba, cpu.r[4]);
+        });
+    }
+
+    #[test]
+    fn add_acceptance() {
+        let program = [
+            0x9c, 0x5f, 0x00, 0x01, 0x40, // ADDW2 &0x100,%r0
+            0x9e, 0x5f, 0xff, 0x01, 0x41, // ADDH2 &0x1ff,%r1
+            0x9f, 0xff, 0x42, // ADDB2 &0xff,%r2
+            0x9f, 0xff, 0x43, // ADDB2 &0xff,%r3
+        ];
+        do_with_program(&program, |cpu, mut bus| {
+            // Setup
+            cpu.r[0] = 0x1f;
+            cpu.r[1] = 0x3fff;
+            cpu.r[2] = 0x2;
+            cpu.r[3] = 0x1;
+            cpu.step(&mut bus);
+            assert_eq!(0x11f, cpu.r[0]);
+            assert!(!cpu.c_flag());
+            assert!(!cpu.z_flag());
+            cpu.step(&mut bus);
+            assert_eq!(0x41fe, cpu.r[1]);
+            assert!(!cpu.c_flag());
+            assert!(!cpu.z_flag());
+            cpu.step(&mut bus);
+            assert_eq!(0x1, cpu.r[2]);
+            assert!(cpu.c_flag());
+            assert!(!cpu.z_flag());
+            cpu.step(&mut bus);
+            assert_eq!(0, cpu.r[3]);
+            assert!(cpu.c_flag());
+            assert!(cpu.z_flag());
+        });
+    }
+
+    #[test]
+    fn alsw3_acceptance() {
+        let program = [
+            0xc0, 0x01, 0x01, 0x40, // ALSW3 &1,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x40, 0x01, 0x40, // ALSW3 %r0,&1,%r0
+            0xc0, 0x4f, 0x00, 0x00, 0x00, 0x80, 0x01, 0x40, // ALSW3 &0x80000000,&1,%r0
+        ];
+        do_with_program(&program, |cpu, mut bus| {
+            cpu.step(&mut bus);
+            assert_eq!(0x02, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x04, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x08, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x10, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x20, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x40, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x80, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x100, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x200, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x400, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x800, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x1000, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x2000, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x4000, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x8000, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x10000, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0, cpu.r[0]);
+        });
+    }
+
+    #[test]
+    fn andw_acceptance() {
+        let program = [
+            0xb8, 0x4f, 0xff, 0x00, 0xff, 0xff, 0x40, // ANDW2 &0xffff00ff,%r0
+            0xba, 0x5f, 0x0f, 0xff, 0x41, // ANDH2 &0xff0f,%r2
+            0xbb, 0x0f, 0x42, // ANDB2 &0x0f,%r3
+        ];
+        do_with_program(&program, |cpu, mut bus| {
+            // Setup
+            cpu.r[0] = 0x12345678;
+            cpu.r[1] = 0x1234;
+            cpu.r[2] = 0x12;
+
+            cpu.step(&mut bus);
+            assert_eq!(0x12340078, cpu.r[0]);
+            cpu.step(&mut bus);
+            assert_eq!(0x1204, cpu.r[1]);
+            cpu.step(&mut bus);
+            assert_eq!(0x02, cpu.r[2]);
+        });
+    }
+
+    #[test]
+    fn beb_acceptance() {
+        let program = [
+            0x6f, 0x04, // BEB &4
+            0x70, // NOP
+            0x70, // NOP
+            0x6f, 0xff, // BEB &-1
+        ];
+        do_with_program(&program, |cpu, mut bus| {
+            cpu.set_z_flag(true);
+            cpu.step(&mut bus);
+            assert_eq!(4, cpu.r[R_PC]);
+            cpu.step(&mut bus);
+            assert_eq!(3, cpu.r[R_PC]);
+        });
+        do_with_program(&program, |cpu, mut bus| {
+            cpu.set_z_flag(false);
+            cpu.step(&mut bus);
+            assert_eq!(2, cpu.r[R_PC]);
+            cpu.step(&mut bus);
+            cpu.step(&mut bus);
+            cpu.step(&mut bus);
+            assert_eq!(6, cpu.r[R_PC]);
+        });
+    }
+
+    #[test]
+    fn beh_acceptance() {
+        let program = [
+            0x6e, 0x0a, 0x00, // BEH &10
+            0x6e, 0xfd, 0xff, // BEH &-3
+        ];
+        do_with_program(&program, |cpu, mut bus| {
+            cpu.set_z_flag(true);
+            cpu.step(&mut bus);
+            assert_eq!(10, cpu.r[R_PC]);
+            cpu.r[R_PC] = 3;
+            cpu.step(&mut bus);
+            assert_eq!(0, cpu.r[R_PC]);
+        });
+        do_with_program(&program, |cpu, mut bus| {
+            cpu.set_z_flag(false);
+            cpu.step(&mut bus);
+            assert_eq!(3, cpu.r[R_PC]);
+            cpu.step(&mut bus);
+            assert_eq!(6, cpu.r[R_PC]);
+        });
+    }
+
 }
