@@ -2,20 +2,21 @@ use bus::Bus;
 use cpu::Cpu;
 use rom_lo::LO_ROM;
 use rom_hi::HI_ROM;
-use err::*;
+use err::BusError;
+use err::CpuError;
 
-#[allow(dead_code)]
-pub struct Dmd<'a> {
-    bus: Bus<'a>,
-    cpu: Cpu<'a>,
+#[derive(Debug)]
+pub struct Dmd {
+    cpu: Cpu,
+    bus: Bus,
 }
 
-#[allow(dead_code)]
-impl<'a> Dmd<'a> {
-    pub fn new() -> Dmd<'a> {
+impl Dmd {
+    pub fn new() -> Dmd {
         let cpu = Cpu::new();
-        let bus = Bus::new(0x20000);
-        Dmd { cpu, bus }
+        let bus = Bus::new(0x100000);
+        let dmd = Dmd { cpu, bus };
+        dmd
     }
 
     pub fn reset(&mut self) -> Result<(), BusError> {
@@ -26,4 +27,22 @@ impl<'a> Dmd<'a> {
         Ok(())
     }
 
+    pub fn step(&mut self) {
+        self.cpu.step(&mut self.bus);
+    }
+
+    pub fn step_with_error(&mut self) -> Result<(), CpuError> {
+        self.cpu.step_with_error(&mut self.bus)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dmd::Dmd;
+
+    #[test]
+    fn creates_dmd() {
+        let mut dmd = Dmd::new();
+        dmd.reset().unwrap();
+    }
 }

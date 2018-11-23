@@ -4,7 +4,9 @@ use std::fmt;
 #[derive(Debug)]
 pub enum CpuException {
     IllegalOpcode,
-    InvalidDescriptor
+    InvalidDescriptor,
+    PrivilegedOpcode,
+    IntegerZeroDivide,
 }
 
 impl fmt::Display for CpuException {
@@ -12,6 +14,8 @@ impl fmt::Display for CpuException {
         match *self {
             CpuException::IllegalOpcode => write!(f, "Illegal Opcode"),
             CpuException::InvalidDescriptor => write!(f, "Invalid Descriptor"),
+            CpuException::PrivilegedOpcode => write!(f, "Privileged Opcode"),
+            CpuException::IntegerZeroDivide => write!(f, "Integer Zero Divide"),
         }
     }
 }
@@ -21,6 +25,8 @@ impl Error for CpuException {
         match *self {
             CpuException::IllegalOpcode => "illegal opcode",
             CpuException::InvalidDescriptor => "invalid descriptor",
+            CpuException::PrivilegedOpcode => "privileged opcode",
+            CpuException::IntegerZeroDivide => "integer zero divide",
         }
     }
 
@@ -28,6 +34,8 @@ impl Error for CpuException {
         match *self {
             CpuException::IllegalOpcode => None,
             CpuException::InvalidDescriptor => None,
+            CpuException::PrivilegedOpcode => None,
+            CpuException::IntegerZeroDivide => None,
         }
     }
 }
@@ -35,9 +43,9 @@ impl Error for CpuException {
 #[derive(Debug)]
 pub enum BusError {
     Init,
-    Read,
-    Write,
-    NoDevice,
+    Read(u32),
+    Write(u32),
+    NoDevice(u32),
     Range,
     Permission,
     Alignment,
@@ -47,9 +55,9 @@ impl fmt::Display for BusError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             BusError::Init => write!(f, "Could not initialize bus"),
-            BusError::Read => write!(f, "Could not read from bus"),
-            BusError::Write => write!(f, "Could not write to bus"),
-            BusError::NoDevice => write!(f, "No device at address"),
+            BusError::Read(addr) => write!(f, "Could not read from bus at address {:x}", addr),
+            BusError::Write(addr) => write!(f, "Could not write to bus at address {:x}", addr),
+            BusError::NoDevice(addr) => write!(f, "No device at address {:x}", addr),
             BusError::Range => write!(f, "Address out of range"),
             BusError::Permission => write!(f, "Invalid permission"),
             BusError::Alignment => write!(f, "Memory Alignment"),
@@ -61,9 +69,9 @@ impl Error for BusError {
     fn description(&self) -> &str {
         match *self {
             BusError::Init => "initialize",
-            BusError::Read => "read",
-            BusError::Write => "store",
-            BusError::NoDevice => "no device",
+            BusError::Read(_) => "read",
+            BusError::Write(_) => "store",
+            BusError::NoDevice(_) => "no device",
             BusError::Range => "out of range",
             BusError::Permission => "invalid permission",
             BusError::Alignment => "alignment",
@@ -73,9 +81,9 @@ impl Error for BusError {
     fn cause(&self) -> Option<&Error> {
         match *self {
             BusError::Init => None,
-            BusError::Read => None,
-            BusError::Write => None,
-            BusError::NoDevice => None,
+            BusError::Read(_) => None,
+            BusError::Write(_) => None,
+            BusError::NoDevice(_) => None,
             BusError::Range => None,
             BusError::Permission => None,
             BusError::Alignment => None,
