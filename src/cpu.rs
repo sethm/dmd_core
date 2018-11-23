@@ -710,7 +710,7 @@ impl Cpu {
         let instr = self.decode_instruction(bus)?;
         let mut pc_increment: i32 = instr.bytes as i32;
 
-        println!("Decoded: {} (0x{:x})", instr.mnemonic.name, instr.mnemonic.opcode);
+        // println!("Decoded: {} (0x{:x})", instr.mnemonic.name, instr.mnemonic.opcode);
 
         match instr.mnemonic.opcode {
             NOP => {
@@ -1522,6 +1522,55 @@ impl Cpu {
                 self.set_c_flag(false);
                 self.set_v_flag_op(result, dst);
             }
+            POPW => {
+                let dst = &instr.operands[0];
+                let val = bus.read_word(self.r[R_SP] as usize - 4, AccessCode::AddressFetch)?;
+                self.write_op(bus, dst, val)?;
+                self.r[R_SP] -= 4;
+                self.set_nz_flags(val, dst);
+                self.set_c_flag(false);
+                self.set_v_flag(false);
+            }
+            PUSHAW => {
+                let src = &instr.operands[0];
+                let val = self.effective_address(bus, src)?;
+                self.stack_push(bus, val)?;
+                self.set_nz_flags(val, src);
+                self.set_c_flag(false);
+                self.set_v_flag(false);
+            }
+            PUSHW => {
+                let src = &instr.operands[0];
+                let val = self.read_op(bus, src)?;
+                self.stack_push(bus, val)?;
+                self.set_nz_flags(val, src);
+                self.set_c_flag(false);
+                self.set_v_flag(false);
+            }
+            RGEQ => {
+                if !self.n_flag() || self.z_flag() {
+                    self.r[R_PC] = self.stack_pop(bus)?;
+                    pc_increment = 0;
+                }
+            }
+            RGEQU => {
+                if !self.c_flag() {
+                    self.r[R_PC] = self.stack_pop(bus)?;
+                    pc_increment = 0;
+                }
+            }
+            RGTR => {
+                if !self.n_flag() && !self.z_flag() {
+                    self.r[R_PC] = self.stack_pop(bus)?;
+                    pc_increment = 0;
+                }
+            }
+            RNEQ | RNEQU => {
+                if !self.z_flag() {
+                    self.r[R_PC] = self.stack_pop(bus)?;
+                    pc_increment = 0;
+                }
+            }
             RET => {
                 let a = self.r[R_AP];
                 let b = bus.read_word((self.r[R_SP] - 4) as usize, AccessCode::AddressFetch)?;
@@ -1532,6 +1581,25 @@ impl Cpu {
                 self.r[R_SP] = a;
 
                 pc_increment = 0;
+            }
+            SAVE => {
+                bus.write_word(self.r[R_SP] as usize, self.r[R_FP])?;
+
+                let mut r = match instr.operands[0].register {
+                    Some(r) => r,
+                    None => return Err(CpuError::Exception(CpuException::IllegalOpcode))
+                };
+
+                let mut stack_offset = 4;
+
+                while r < R_FP {
+                    bus.write_word(self.r[R_SP] as usize + stack_offset, self.r[r])?;
+                    r += 1;
+                    stack_offset += 4;
+                }
+
+                self.r[R_SP] = self.r[R_SP] + 28;
+                self.r[R_FP] = self.r[R_SP];
             }
             _ => {
                 println!("Unhandled op: {:?}", instr);
