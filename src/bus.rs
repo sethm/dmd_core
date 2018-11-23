@@ -58,6 +58,8 @@ impl AddressRange {
 #[derive(Debug)]
 pub struct Bus {
     rom: Mem,
+    vid: Mem,
+    bbram: Mem,
     ram: Mem,
 }
 
@@ -65,6 +67,8 @@ impl Bus {
     pub fn new(mem_size: usize) -> Bus {
         Bus {
             rom: Mem::new(0, 0x20000, true),
+            vid: Mem::new(0x500000, 0x2, false),
+            bbram: Mem::new(0x600000, 0x2000, false),
             ram: Mem::new(0x700000, mem_size, false),
         }
     }
@@ -72,6 +76,14 @@ impl Bus {
     fn get_device(&mut self, address: usize) -> Result<&mut Device, BusError> {
         if address < 0x20000 {
             return Ok(&mut self.rom);
+        }
+
+        if address >= 0x500000 && address < 0x500002 {
+            return Ok(&mut self.vid);
+        }
+
+        if address >= 0x600000 && address < 0x602000 {
+            return Ok(&mut self.bbram);
         }
 
         if address >= 0x700000 && address < 0x800000 {

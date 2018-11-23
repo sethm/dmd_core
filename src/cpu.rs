@@ -1547,6 +1547,25 @@ impl Cpu {
                 self.set_c_flag(false);
                 self.set_v_flag(false);
             }
+            RESTORE => {
+                let a = self.r[R_FP] - 28;
+                let b = bus.read_word(a as usize, AccessCode::AddressFetch)?;
+                let mut c = self.r[R_FP] - 24;
+
+                let mut r = match instr.operands[0].register {
+                    Some(r) => r,
+                    None => return Err(CpuError::Exception(CpuException::IllegalOpcode))
+                };
+
+                while r < R_FP {
+                    self.r[r] = bus.read_word(c as usize, AccessCode::AddressFetch)?;
+                    r += 1;
+                    c += 4;
+                }
+
+                self.r[R_FP] = b;
+                self.r[R_SP] = a;
+            }
             RGEQ => {
                 if !self.n_flag() || self.z_flag() {
                     self.r[R_PC] = self.stack_pop(bus)?;
@@ -1570,6 +1589,34 @@ impl Cpu {
                     self.r[R_PC] = self.stack_pop(bus)?;
                     pc_increment = 0;
                 }
+            }
+            RLEQ => {
+                if self.n_flag() || self.z_flag() {
+                    self.r[R_PC] = self.stack_pop(bus)?;
+                    pc_increment = 0;
+                }
+            }
+            RLEQU => {
+                if self.c_flag() || self.z_flag() {
+                    self.r[R_PC] = self.stack_pop(bus)?;
+                    pc_increment = 0;
+                }
+            }
+            RLSS => {
+                if self.n_flag() || !self.z_flag() {
+                    self.r[R_PC] = self.stack_pop(bus)?;
+                    pc_increment = 0;
+                }
+            }
+            REQL | REQLU => {
+                if self.z_flag() {
+                    self.r[R_PC] = self.stack_pop(bus)?;
+                    pc_increment = 0;
+                }
+            }
+            RSB => {
+                self.r[R_PC] = self.stack_pop(bus)?;
+                pc_increment = 0;
             }
             RET => {
                 let a = self.r[R_AP];
@@ -1600,6 +1647,27 @@ impl Cpu {
 
                 self.r[R_SP] = self.r[R_SP] + 28;
                 self.r[R_FP] = self.r[R_SP];
+            }
+            TSTW => {
+                let a = self.read_op(bus, &instr.operands[0])?;
+                self.set_n_flag((a as i32) < 0);
+                self.set_z_flag(a == 0);
+                self.set_c_flag(false);
+                self.set_v_flag(false);
+            }
+            TSTH => {
+                let a = self.read_op(bus, &instr.operands[0])?;
+                self.set_n_flag((a as i16) < 0);
+                self.set_z_flag(a == 0);
+                self.set_c_flag(false);
+                self.set_v_flag(false);
+            }
+            TSTB => {
+                let a = self.read_op(bus, &instr.operands[0])?;
+                self.set_n_flag((a as i8) < 0);
+                self.set_z_flag(a == 0);
+                self.set_c_flag(false);
+                self.set_v_flag(false);
             }
             _ => {
                 println!("Unhandled op: {:?}", instr);
