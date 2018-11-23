@@ -1,7 +1,7 @@
 use err::BusError;
 
-use std::fmt::Debug;
 use mem::Mem;
+use std::fmt::Debug;
 
 /// Access Status Code
 pub enum AccessCode {
@@ -45,7 +45,10 @@ pub struct AddressRange {
 
 impl AddressRange {
     pub fn new(start_address: usize, len: usize) -> AddressRange {
-        AddressRange { start_address, len }
+        AddressRange {
+            start_address,
+            len,
+        }
     }
     pub fn contains(&self, address: usize) -> bool {
         address >= self.start_address && address < self.start_address + self.len
@@ -99,54 +102,43 @@ impl Bus {
     pub fn read_op_half(&mut self, address: usize) -> Result<u16, BusError> {
         let m = self.get_device(address)?;
 
-        Ok((m.read_byte(address, AccessCode::OperandFetch)? as u16) |
-            (m.read_byte(address + 1, AccessCode::OperandFetch)? as u16).wrapping_shl(8))
+        Ok((m.read_byte(address, AccessCode::OperandFetch)? as u16)
+            | (m.read_byte(address + 1, AccessCode::OperandFetch)? as u16).wrapping_shl(8))
     }
 
     pub fn read_op_word(&mut self, address: usize) -> Result<u32, BusError> {
         let m = self.get_device(address)?;
 
-        Ok((m.read_byte(address, AccessCode::OperandFetch)? as u32) |
-            (m.read_byte(address + 1, AccessCode::OperandFetch)? as u32).wrapping_shl(8) |
-            (m.read_byte(address + 2, AccessCode::OperandFetch)? as u32).wrapping_shl(16) |
-            (m.read_byte(address + 3, AccessCode::OperandFetch)? as u32).wrapping_shl(24))
+        Ok((m.read_byte(address, AccessCode::OperandFetch)? as u32)
+            | (m.read_byte(address + 1, AccessCode::OperandFetch)? as u32).wrapping_shl(8)
+            | (m.read_byte(address + 2, AccessCode::OperandFetch)? as u32).wrapping_shl(16)
+            | (m.read_byte(address + 3, AccessCode::OperandFetch)? as u32).wrapping_shl(24))
     }
 
-    pub fn read_half_unaligned(
-        &mut self,
-        address: usize,
-        access: AccessCode,
-    ) -> Result<u16, BusError> {
+    pub fn read_half_unaligned(&mut self, address: usize, access: AccessCode) -> Result<u16, BusError> {
         self.get_device(address)?.read_half(address, access)
     }
 
-    pub fn read_word_unaligned(
-        &mut self,
-        address: usize,
-        access: AccessCode,
-    ) -> Result<u32, BusError> {
+    pub fn read_word_unaligned(&mut self, address: usize, access: AccessCode) -> Result<u32, BusError> {
         self.get_device(address)?.read_word(address, access)
     }
 
     pub fn write_byte(&mut self, address: usize, val: u8) -> Result<(), BusError> {
-        self.get_device(address)?
-            .write_byte(address, val, AccessCode::Write)
+        self.get_device(address)?.write_byte(address, val, AccessCode::Write)
     }
 
     pub fn write_half(&mut self, address: usize, val: u16) -> Result<(), BusError> {
         if address & 1 != 0 {
             return Err(BusError::Alignment);
         }
-        self.get_device(address)?
-            .write_half(address, val, AccessCode::Write)
+        self.get_device(address)?.write_half(address, val, AccessCode::Write)
     }
 
     pub fn write_word(&mut self, address: usize, val: u32) -> Result<(), BusError> {
         if address & 3 != 0 {
             return Err(BusError::Alignment);
         }
-        self.get_device(address)?
-            .write_word(address, val, AccessCode::Write)
+        self.get_device(address)?.write_word(address, val, AccessCode::Write)
     }
 
     pub fn load(&mut self, address: usize, data: &[u8]) -> Result<(), BusError> {

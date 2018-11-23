@@ -1,11 +1,11 @@
 use bus::*;
 use err::BusError;
 
+use std::fmt::Debug;
+use std::fmt::Error;
+use std::fmt::Formatter;
 use std::ops::Index;
 use std::vec::Vec;
-use std::fmt::Debug;
-use std::fmt::Formatter;
-use std::fmt::Error;
 
 pub struct Mem {
     address_ranges: Vec<AddressRange>,
@@ -70,7 +70,7 @@ impl Device for Mem {
         } else {
             Ok(
                 // Byte-swap
-                u16::from(self.ram[offset]).wrapping_shl(8) | u16::from(self.ram[offset + 1])
+                u16::from(self.ram[offset]).wrapping_shl(8) | u16::from(self.ram[offset + 1]),
             )
         }
     }
@@ -86,7 +86,7 @@ impl Device for Mem {
                 u32::from(self.ram[offset]).wrapping_shl(24)
                     | u32::from(self.ram[offset + 1]).wrapping_shl(16)
                     | u32::from(self.ram[offset + 2]).wrapping_shl(8)
-                    | u32::from(self.ram[offset + 3])
+                    | u32::from(self.ram[offset + 3]),
             )
         }
     }
@@ -168,7 +168,7 @@ impl Index<usize> for Mem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn cannot_write_to_read_only_memory() {
         let mut mem = Mem::new(0, 0x1000, true);

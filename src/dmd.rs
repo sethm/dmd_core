@@ -1,9 +1,9 @@
 use bus::Bus;
 use cpu::Cpu;
-use rom_lo::LO_ROM;
-use rom_hi::HI_ROM;
 use err::BusError;
 use err::CpuError;
+use rom_hi::HI_ROM;
+use rom_lo::LO_ROM;
 
 #[derive(Debug)]
 pub struct Dmd {
@@ -15,7 +15,10 @@ impl Dmd {
     pub fn new() -> Dmd {
         let cpu = Cpu::new();
         let bus = Bus::new(0x100000);
-        let dmd = Dmd { cpu, bus };
+        let dmd = Dmd {
+            cpu,
+            bus,
+        };
         dmd
     }
 

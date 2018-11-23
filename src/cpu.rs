@@ -184,41 +184,30 @@ fn add_offset(val: u32, offset: u32) -> u32 {
     ((val as i32).wrapping_add(offset as i32)) as u32
 }
 
-
 const SHIFT_8_TABLE: [u8; 65] = [
-    0x00, 0x80, 0xc0, 0xe0, 0xf0, 0xf8, 0xfc, 0xfe, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff,
+    0x00, 0x80, 0xc0, 0xe0, 0xf0, 0xf8, 0xfc, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff,
 ];
 
 const SHIFT_16_TABLE: [u16; 65] = [
-    0x0000, 0x8000, 0xc000, 0xe000, 0xf000, 0xf800, 0xfc00, 0xfe00, 0xff00,
-    0xff80, 0xffc0, 0xffe0, 0xfff0, 0xfff8, 0xfffc, 0xfffe, 0xffff, 0xffff,
-    0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
-    0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
-    0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
-    0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
-    0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
-    0xffff, 0xffff,
+    0x0000, 0x8000, 0xc000, 0xe000, 0xf000, 0xf800, 0xfc00, 0xfe00, 0xff00, 0xff80, 0xffc0, 0xffe0, 0xfff0, 0xfff8, 0xfffc, 0xfffe,
+    0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
+    0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
+    0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
+    0xffff,
 ];
 
 const SHIFT_32_TABLE: [u32; 65] = [
-    0x00000000, 0x80000000, 0xc0000000, 0xe0000000, 0xf0000000, 0xf8000000,
-    0xfc000000, 0xfe000000, 0xff000000, 0xff800000, 0xffc00000, 0xffe00000,
-    0xfff00000, 0xfff80000, 0xfffc0000, 0xfffe0000, 0xffff0000, 0xffff8000,
-    0xffffc000, 0xffffe000, 0xfffff000, 0xfffff800, 0xfffffc00, 0xfffffe00,
-    0xffffff00, 0xffffff80, 0xffffffc0, 0xffffffe0, 0xfffffff0, 0xfffffff8,
-    0xfffffffc, 0xfffffffe, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+    0x00000000, 0x80000000, 0xc0000000, 0xe0000000, 0xf0000000, 0xf8000000, 0xfc000000, 0xfe000000, 0xff000000, 0xff800000,
+    0xffc00000, 0xffe00000, 0xfff00000, 0xfff80000, 0xfffc0000, 0xfffe0000, 0xffff0000, 0xffff8000, 0xffffc000, 0xffffe000,
+    0xfffff000, 0xfffff800, 0xfffffc00, 0xfffffe00, 0xffffff00, 0xffffff80, 0xffffffc0, 0xffffffe0, 0xfffffff0, 0xfffffff8,
+    0xfffffffc, 0xfffffffe, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
     0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
 ];
-
 
 lazy_static! {
     static ref MNEMONICS: HashMap<u16, Mnemonic> = {
@@ -426,7 +415,7 @@ impl Cpu {
     pub fn new() -> Cpu {
         Cpu {
             r: [0; 16],
-            error_context: ErrorContext::None
+            error_context: ErrorContext::None,
         }
     }
 
@@ -971,25 +960,22 @@ impl Cpu {
                         self.r[R_PC] += 2;
 
                         // Set old PSW ISC, TM, and ET to 0, 0, 1
-                        self.r[R_PSW] &= !(F_ISC|F_TM|F_ET);
+                        self.r[R_PSW] &= !(F_ISC | F_TM | F_ET);
                         self.r[R_PSW] |= 1 << O_ET;
 
                         self.context_switch_1(bus, a)?;
                         self.context_switch_2(bus, a)?;
 
-                        self.r[R_PSW] &= !(F_ISC|F_TM|F_ET);
+                        self.r[R_PSW] &= !(F_ISC | F_TM | F_ET);
                         self.r[R_PSW] |= 7 << O_ISC;
                         self.r[R_PSW] |= 3 << O_ET;
 
                         self.context_switch_3(bus)?;
 
                         self.error_context = ErrorContext::None;
-                    },
-                    _ => {
-                        return Err(CpuError::Exception(CpuException::PrivilegedOpcode))
                     }
+                    _ => return Err(CpuError::Exception(CpuException::PrivilegedOpcode)),
                 }
-
             }
             CLRW | CLRH | CLRB => {
                 self.write_op(bus, &instr.operands[0], 0)?;
@@ -1164,7 +1150,7 @@ impl Cpu {
                         // TODO: Enable MMU, if present
                         self.r[R_PC] = self.r[0];
                         pc_increment = 0;
-                    },
+                    }
                     _ => {
                         return Err(CpuError::Exception(CpuException::PrivilegedOpcode));
                     }
@@ -1176,7 +1162,7 @@ impl Cpu {
                         // TODO: Disable MMU, if present
                         self.r[R_PC] = self.r[0];
                         pc_increment = 0;
-                    },
+                    }
                     _ => {
                         return Err(CpuError::Exception(CpuException::PrivilegedOpcode));
                     }
@@ -1282,17 +1268,17 @@ impl Cpu {
                         if (a & 0x80000000) != 0 {
                             result |= SHIFT_32_TABLE[b as usize + 1];
                         }
-                    },
+                    }
                     Data::Half | Data::UHalf => {
                         if (a & 0x8000) != 0 {
                             result |= SHIFT_16_TABLE[b as usize + 1] as u32;
                         }
-                    },
+                    }
                     Data::Byte | Data::SByte => {
                         if (a & 0x80) != 0 {
                             result |= SHIFT_8_TABLE[b as usize + 1] as u32;
                         }
-                    },
+                    }
                     _ => {}
                 };
 
@@ -1315,9 +1301,7 @@ impl Cpu {
                 self.set_c_flag(false);
                 self.set_v_flag_op(result, dst);
             }
-            GATE => {
-                println!("[GATE] Unimplemented.")
-            }
+            GATE => println!("[GATE] Unimplemented."),
             MCOMW | MCOMH | MCOMB => {
                 let dst = &instr.operands[1];
                 let a = self.read_op(bus, &instr.operands[0])?;
@@ -1551,8 +1535,8 @@ impl Cpu {
             }
             _ => {
                 println!("Unhandled op: {:?}", instr);
-                return Err(CpuError::Exception(CpuException::IllegalOpcode))
-            },
+                return Err(CpuError::Exception(CpuException::IllegalOpcode));
+            }
         };
 
         Ok(pc_increment)
@@ -1565,7 +1549,9 @@ impl Cpu {
             Ok(i) => self.r[R_PC] = (self.r[R_PC] as i32 + i) as u32,
             Err(CpuError::Bus(BusError::Alignment)) => {}
             Err(CpuError::Bus(BusError::Permission)) => {}
-            Err(CpuError::Bus(BusError::NoDevice(_))) | Err(CpuError::Bus(BusError::Read(_))) | Err(CpuError::Bus(BusError::Write(_))) => {}
+            Err(CpuError::Bus(BusError::NoDevice(_)))
+            | Err(CpuError::Bus(BusError::Read(_)))
+            | Err(CpuError::Bus(BusError::Write(_))) => {}
             Err(CpuError::Exception(CpuException::IllegalOpcode)) => {}
             Err(CpuError::Exception(CpuException::InvalidDescriptor)) => {}
             Err(CpuError::Exception(CpuException::PrivilegedOpcode)) => {}
@@ -1576,7 +1562,7 @@ impl Cpu {
     pub fn step_with_error(&mut self, bus: &mut Bus) -> Result<(), CpuError> {
         match self.dispatch(bus) {
             Ok(i) => self.r[R_PC] = (self.r[R_PC] as i32 + i) as u32,
-            Err(e) => return Err(e)
+            Err(e) => return Err(e),
         }
 
         Ok(())
@@ -1953,7 +1939,7 @@ impl Cpu {
             1 => CpuLevel::Executive,
             2 => CpuLevel::Supervisor,
             3 => CpuLevel::Kernel,
-            _ => CpuLevel::User
+            _ => CpuLevel::User,
         }
     }
 

@@ -2,12 +2,12 @@
 
 pub mod bus;
 pub mod cpu;
-pub mod err;
-pub mod mem;
-pub mod instr;
-pub mod rom_lo;
-pub mod rom_hi;
 pub mod dmd;
+pub mod err;
+pub mod instr;
+pub mod mem;
+pub mod rom_hi;
+pub mod rom_lo;
 
 #[macro_use]
 extern crate lazy_static;
