@@ -1200,7 +1200,7 @@ impl Cpu {
             }
             INCW | INCH | INCB => {
                 let a = self.read_op(bus, &instr.operands[0])?;
-                self.add(bus, a, 1, &instr.operands[1])?;
+                self.add(bus, a, 1, &instr.operands[0])?;
             }
             INSFW | INSFH | INSFB => {
                 let width_op = &instr.operands[0];
@@ -1647,6 +1647,21 @@ impl Cpu {
 
                 self.r[R_SP] = self.r[R_SP] + 28;
                 self.r[R_FP] = self.r[R_SP];
+            }
+            SUBW2 | SUBH2 | SUBB2 => {
+                let src = &instr.operands[0];
+                let dst = &instr.operands[1];
+                let a = self.read_op(bus, dst)?;
+                let b = self.read_op(bus, src)?;
+                self.sub(bus, a, b, dst)?;
+            }
+            SUBW3 | SUBH3 | SUBB3 => {
+                let src1 = &instr.operands[0];
+                let src2 = &instr.operands[1];
+                let dst = &instr.operands[2];
+                let a = self.read_op(bus, src2)?;
+                let b = self.read_op(bus, src1)?;
+                self.sub(bus, a, b, dst)?;
             }
             TSTW => {
                 let a = self.read_op(bus, &instr.operands[0])?;

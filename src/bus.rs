@@ -2,6 +2,7 @@ use err::BusError;
 
 use mem::Mem;
 use std::fmt::Debug;
+use std::ops::Range;
 
 /// Access Status Code
 pub enum AccessCode {
@@ -23,9 +24,10 @@ pub enum AccessCode {
     NoOp,
 }
 
+
 /// A virtual device on the bus.
 pub trait Device: Send + Sync + Debug {
-    fn address_ranges(&self) -> &[AddressRange];
+    fn address_range(&self) -> &Range<usize>;
     fn name(&self) -> &str;
     fn is_read_only(&self) -> bool;
     fn read_byte(&mut self, address: usize, access: AccessCode) -> Result<u8, BusError>;
@@ -37,29 +39,24 @@ pub trait Device: Send + Sync + Debug {
     fn load(&mut self, address: usize, data: &[u8]) -> Result<(), BusError>;
 }
 
-#[derive(Eq, PartialEq, Debug)]
-pub struct AddressRange {
-    pub start_address: usize,
-    pub len: usize,
-}
-
-impl AddressRange {
-    pub fn new(start_address: usize, len: usize) -> AddressRange {
-        AddressRange {
-            start_address,
-            len,
-        }
-    }
-    pub fn contains(&self, address: usize) -> bool {
-        address >= self.start_address && address < self.start_address + self.len
-    }
-}
+//
+// Bus Memory Map
+//
+//  0x000000..0x01ffff     ROM
+//  0x200000..0x20003f     DUART (Port A: host, Port B: keyboard/printer)
+//  0x300000..0x3000ff     8530 SCC on optional I/O board
+//  0x400000..0x400003     Mouse X/Y data
+//  0x500000..0x500001     Display starting addr
+//  0x600000..0x601fff     BBRAM (Non-volatile RAM)
+//  0x700000..0x7fffff     RAM (256K or 1M)
+//
 
 #[derive(Debug)]
 pub struct Bus {
     rom: Mem,
-    vid: Mem,
-    bbram: Mem,
+    duart: Mem, // TODO: change to DUART when implemented
+    vid: Mem,   // TODO: Figure out what device this really is
+    bbram: Mem, // TODO: change to BBRAM when implemented
     ram: Mem,
 }
 
@@ -67,6 +64,7 @@ impl Bus {
     pub fn new(mem_size: usize) -> Bus {
         Bus {
             rom: Mem::new(0, 0x20000, true),
+            duart: Mem::new(0x200000, 0x40, false),
             vid: Mem::new(0x500000, 0x2, false),
             bbram: Mem::new(0x600000, 0x2000, false),
             ram: Mem::new(0x700000, mem_size, false),
@@ -76,6 +74,10 @@ impl Bus {
     fn get_device(&mut self, address: usize) -> Result<&mut Device, BusError> {
         if address < 0x20000 {
             return Ok(&mut self.rom);
+        }
+
+        if address >= 0x200000 && address < 0x200040 {
+            return Ok(&mut self.duart);
         }
 
         if address >= 0x500000 && address < 0x500002 {
@@ -155,6 +157,10 @@ impl Bus {
 
     pub fn load(&mut self, address: usize, data: &[u8]) -> Result<(), BusError> {
         self.get_device(address)?.load(address, data)
+    }
+
+    pub fn video_ram(&self) -> Result<&[u8], BusError> {
+        self.ram.as_slice(0x0..0x19000)
     }
 }
 

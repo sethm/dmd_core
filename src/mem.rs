@@ -6,9 +6,11 @@ use std::fmt::Error;
 use std::fmt::Formatter;
 use std::ops::Index;
 use std::vec::Vec;
+use std::ops::Range;
 
 pub struct Mem {
-    address_ranges: Vec<AddressRange>,
+    address_range: Range<usize>,
+    len: usize,
     ram: Vec<u8>,
     is_read_only: bool,
 }
@@ -17,26 +19,27 @@ pub struct Mem {
 impl Mem {
     pub fn new(start_address: usize, len: usize, is_read_only: bool) -> Mem {
         Mem {
-            address_ranges: vec![AddressRange::new(start_address, len)],
+            address_range: start_address..start_address+len,
+            len,
             ram: vec![0; len],
             is_read_only,
         }
     }
 
-    pub fn address_range(&self) -> &AddressRange {
-        &self.address_ranges[0]
+    pub fn as_slice(&self, range: Range<usize>) -> Result<&[u8], BusError> {
+        Ok(&self.ram[range])
     }
 }
 
 impl Debug for Mem {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        write!(f, "Memory [start=0x{:x} len=0x{:x}]", self.address_range().start_address, self.address_range().len)
+        write!(f, "Memory [0x{:x}..0x{:x}]", self.address_range.start, self.address_range().end)
     }
 }
 
 impl Device for Mem {
-    fn address_ranges(&self) -> &[AddressRange] {
-        &self.address_ranges
+    fn address_range(&self) -> &Range<usize> {
+        &self.address_range
     }
 
     fn name(&self) -> &str {
@@ -53,9 +56,9 @@ impl Device for Mem {
 
     /// Read from memory at the specified absolute address.
     fn read_byte(&mut self, address: usize, _: AccessCode) -> Result<u8, BusError> {
-        let offset = address.wrapping_sub(self.address_range().start_address);
+        let offset = address.wrapping_sub(self.address_range().start);
 
-        if offset >= self.address_range().len {
+        if address >= self.address_range().end {
             Err(BusError::Range)
         } else {
             Ok(self.ram[offset])
@@ -63,9 +66,9 @@ impl Device for Mem {
     }
 
     fn read_half(&mut self, address: usize, _: AccessCode) -> Result<u16, BusError> {
-        let offset = address.wrapping_sub(self.address_range().start_address);
+        let offset = address.wrapping_sub(self.address_range().start);
 
-        if offset >= self.address_range().len {
+        if address >= self.address_range().end {
             Err(BusError::Range)
         } else {
             Ok(
@@ -76,9 +79,9 @@ impl Device for Mem {
     }
 
     fn read_word(&mut self, address: usize, _: AccessCode) -> Result<u32, BusError> {
-        let offset = address.wrapping_sub(self.address_range().start_address);
+        let offset = address.wrapping_sub(self.address_range().start);
 
-        if offset >= self.address_range().len {
+        if address >= self.address_range().end {
             Err(BusError::Range)
         } else {
             Ok(
@@ -97,9 +100,9 @@ impl Device for Mem {
             return Err(BusError::Write(address as u32));
         }
 
-        let offset = address.wrapping_sub(self.address_range().start_address);
+        let offset = address.wrapping_sub(self.address_range().start);
 
-        if offset >= self.address_range().len {
+        if address >= self.address_range().end {
             Err(BusError::Range)
         } else {
             self.ram[offset] = val;
@@ -112,9 +115,9 @@ impl Device for Mem {
             return Err(BusError::Write(address as u32));
         }
 
-        let offset = address.wrapping_sub(self.address_range().start_address);
+        let offset = address.wrapping_sub(self.address_range().start);
 
-        if offset >= self.address_range().len {
+        if address >= self.address_range().end {
             Err(BusError::Range)
         } else {
             self.ram[offset] = (val.wrapping_shr(8) & 0xff) as u8;
@@ -128,9 +131,9 @@ impl Device for Mem {
             return Err(BusError::Write(address as u32));
         }
 
-        let offset = address.wrapping_sub(self.address_range().start_address);
+        let offset = address.wrapping_sub(self.address_range().start);
 
-        if offset >= self.address_range().len {
+        if address >= self.address_range().end {
             Err(BusError::Range)
         } else {
             self.ram[offset] = (val.wrapping_shr(24) & 0xff) as u8;
@@ -144,9 +147,9 @@ impl Device for Mem {
     /// Load a block of bytes into memory at the specified absolute
     /// address. Note that "load" can load into read-only memory.
     fn load(&mut self, address: usize, program: &[u8]) -> Result<(), BusError> {
-        let offset = address.wrapping_sub(self.address_range().start_address);
+        let offset = address.wrapping_sub(self.address_range().start);
 
-        if offset.wrapping_add(program.len()) > self.address_range().len {
+        if program.len() > self.len {
             Err(BusError::Range)
         } else {
             for (i, byte) in program.iter().enumerate() {

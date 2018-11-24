@@ -30,6 +30,10 @@ impl Dmd {
         Ok(())
     }
 
+    pub fn video_ram(&self) -> Result<&[u8], BusError> {
+        self.bus.video_ram()
+    }
+
     pub fn step(&mut self) {
         self.cpu.step(&mut self.bus);
     }
