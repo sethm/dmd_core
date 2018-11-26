@@ -5,7 +5,6 @@ use err::CpuError;
 use rom_hi::HI_ROM;
 use rom_lo::LO_ROM;
 
-#[derive(Debug)]
 pub struct Dmd {
     cpu: Cpu,
     bus: Bus,
@@ -15,11 +14,10 @@ impl Dmd {
     pub fn new() -> Dmd {
         let cpu = Cpu::new();
         let bus = Bus::new(0x100000);
-        let dmd = Dmd {
+        Dmd {
             cpu,
             bus,
-        };
-        dmd
+        }
     }
 
     pub fn reset(&mut self) -> Result<(), BusError> {
@@ -36,6 +34,14 @@ impl Dmd {
 
     pub fn step(&mut self) {
         self.cpu.step(&mut self.bus);
+    }
+
+    pub fn dump_history(&mut self) {
+        self.cpu.dump_history();
+    }
+
+    pub fn get_pc(&self) -> u32 {
+        self.cpu.get_pc()
     }
 
     pub fn step_with_error(&mut self) -> Result<(), CpuError> {

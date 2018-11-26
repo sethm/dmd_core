@@ -1,4 +1,5 @@
 use bus::{AccessCode, Bus};
+use history::*;
 use err::*;
 use instr::*;
 use std::collections::HashMap;
@@ -109,7 +110,7 @@ pub enum ErrorContext {
     StackFault,
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub struct Operand {
     pub size: u8,
     pub mode: AddrMode,
@@ -155,10 +156,18 @@ struct Mnemonic {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct DecodedInstruction<'a> {
-    mnemonic: &'a Mnemonic,
-    bytes: u8,
-    operands: Vec<Operand>,
+pub struct DecodedInstruction {
+    pub opcode: u16,
+    pub name: &'static str,
+    pub data_type: Data,
+    pub bytes: u8,
+    pub operands: Vec<Operand>,
+}
+
+impl DecodedInstruction {
+    pub fn decode(&self) -> String {
+        format!("{}\t0x{:x}", self.name, 1000)
+    }
 }
 
 macro_rules! mn {
@@ -398,8 +407,6 @@ lazy_static! {
     };
 }
 
-#[allow(dead_code)]
-#[derive(Debug)]
 pub struct Cpu {
     //
     // Note that we store registers as an array of type u32 because
@@ -408,14 +415,15 @@ pub struct Cpu {
     //
     r: [u32; 16],
     error_context: ErrorContext,
+    history: History,
 }
 
-#[allow(dead_code)]
 impl Cpu {
     pub fn new() -> Cpu {
         Cpu {
             r: [0; 16],
             error_context: ErrorContext::None,
+            history: History::new(1024),
         }
     }
 
@@ -706,13 +714,27 @@ impl Cpu {
         b % a
     }
 
+    pub fn dump_history(&mut self) {
+        if self.history.len() == 0 {
+            return
+        }
+        for _ in 0..self.history.len() {
+            let entry = self.history.next();
+            match entry {
+                Some(e) => println!("{}", e),
+                None => {}
+            }
+        }
+    }
+
     fn dispatch(&mut self, bus: &mut Bus) -> Result<i32, CpuError> {
         let instr = self.decode_instruction(bus)?;
+        self.history.push(HistoryEntry::new(&instr, self.r[R_PC]));
         let mut pc_increment: i32 = instr.bytes as i32;
 
         // println!("Decoded: {} (0x{:x})", instr.mnemonic.name, instr.mnemonic.opcode);
 
-        match instr.mnemonic.opcode {
+        match instr.opcode {
             NOP => {
                 pc_increment = 1;
             }
@@ -1976,8 +1998,10 @@ impl Cpu {
                 let total_bytes = addr - initial_addr;
 
                 Ok(DecodedInstruction {
+                    opcode: mn.opcode,
+                    name: mn.name,
+                    data_type: mn.dtype,
                     bytes: total_bytes as u8,
-                    mnemonic: mn,
                     operands,
                 })
             }
@@ -2116,6 +2140,10 @@ impl Cpu {
         let result = bus.read_word((self.r[R_ISP] - 4) as usize, AccessCode::AddressFetch)?;
         self.r[R_ISP] -= 4;
         Ok(result)
+    }
+
+    pub fn get_pc(&self) -> u32 {
+        self.r[R_PC]
     }
 }
 
@@ -2402,8 +2430,10 @@ mod tests {
             assert_eq!(
                 instr,
                 DecodedInstruction {
+                    opcode: 0x300d,
                     bytes: 2,
-                    mnemonic: MNEMONICS.get(&0x300d).unwrap(),
+                    name: "ENBVJMP",
+                    data_type: Data::None,
                     operands: vec![],
                 }
             );
@@ -2428,8 +2458,10 @@ mod tests {
                 assert_eq!(
                     inst,
                     DecodedInstruction {
+                        opcode: 0x87,
                         bytes: 6,
-                        mnemonic: MNEMONICS.get(&0x87).unwrap(),
+                        name: "MOVB",
+                        data_type: Data::Byte,
                         operands: expected_operands,
                     }
                 );
@@ -2444,8 +2476,10 @@ mod tests {
                 assert_eq!(
                     inst,
                     DecodedInstruction {
+                        opcode: 0x87,
                         bytes: 4,
-                        mnemonic: MNEMONICS.get(&0x87).unwrap(),
+                        name: "MOVB",
+                        data_type: Data::Byte,
                         operands: expected_operands,
                     }
                 );

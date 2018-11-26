@@ -1,6 +1,7 @@
 #![feature(nll)]
 
 pub mod bus;
+pub mod history;
 pub mod cpu;
 pub mod dmd;
 pub mod err;
