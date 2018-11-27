@@ -55,6 +55,7 @@ pub trait Device: Send + Sync + Debug {
 pub struct Bus {
     rom: Mem,
     duart: Mem, // TODO: change to DUART when implemented
+    scc: Mem,   // TODO: Remove
     vid: Mem,   // TODO: Figure out what device this really is
     bbram: Mem, // TODO: change to BBRAM when implemented
     ram: Mem,
@@ -65,6 +66,7 @@ impl Bus {
         Bus {
             rom: Mem::new(0, 0x20000, true),
             duart: Mem::new(0x200000, 0x40, false),
+            scc: Mem::new(0x300000, 0x100, false),
             vid: Mem::new(0x500000, 0x2, false),
             bbram: Mem::new(0x600000, 0x2000, false),
             ram: Mem::new(0x700000, mem_size, false),
@@ -78,6 +80,10 @@ impl Bus {
 
         if address >= 0x200000 && address < 0x200040 {
             return Ok(&mut self.duart);
+        }
+
+        if address >= 0x300000 && address < 0x300100 {
+            return Ok(&mut self.scc);
         }
 
         if address >= 0x500000 && address < 0x500002 {
@@ -129,14 +135,6 @@ impl Bus {
             | (m.read_byte(address + 3, AccessCode::OperandFetch)? as u32).wrapping_shl(24))
     }
 
-    pub fn read_half_unaligned(&mut self, address: usize, access: AccessCode) -> Result<u16, BusError> {
-        self.get_device(address)?.read_half(address, access)
-    }
-
-    pub fn read_word_unaligned(&mut self, address: usize, access: AccessCode) -> Result<u32, BusError> {
-        self.get_device(address)?.read_word(address, access)
-    }
-
     pub fn write_byte(&mut self, address: usize, val: u8) -> Result<(), BusError> {
         self.get_device(address)?.write_byte(address, val, AccessCode::Write)
     }
@@ -161,6 +159,7 @@ impl Bus {
 
     pub fn video_ram(&self) -> Result<&[u8], BusError> {
         self.ram.as_slice(0x0..0x19000)
+        // self.ram.as_slice(0x19000..0x32000)
     }
 }
 

@@ -413,9 +413,12 @@ pub struct Cpu {
     // we often need to reference registers by index (0-15) when decoding
     // and executing instructions.
     //
-    r: [u32; 16],
+    pub r: [u32; 16],
     error_context: ErrorContext,
     history: History,
+    steps: u64,
+    ipl14: bool,
+    ipl15: bool,
 }
 
 impl Cpu {
@@ -424,6 +427,9 @@ impl Cpu {
             r: [0; 16],
             error_context: ErrorContext::None,
             history: History::new(1024),
+            steps: 0,
+            ipl14: false,
+            ipl15: false,
         }
     }
 
@@ -455,7 +461,7 @@ impl Cpu {
             self.r[R_PCBP] += 12;
         }
 
-        self.set_isc(3);
+        self.set_isc(3);     // Set ISC = 3
 
         Ok(())
     }
@@ -563,7 +569,10 @@ impl Cpu {
     pub fn write_op(&mut self, bus: &mut Bus, op: &Operand, val: u32) -> Result<(), CpuError> {
         match op.mode {
             AddrMode::Register => match op.register {
-                Some(r) => self.r[r] = val,
+                Some(r) => {
+                    println!("[{:08x}] Setting R[{}] = 0x{:08x}", self.r[R_PC], r, val);
+                    self.r[r] = val
+                },
                 None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
             },
             AddrMode::NegativeLiteral
@@ -727,10 +736,61 @@ impl Cpu {
         }
     }
 
+    // TODO: Remove unwraps
+    fn on_interrupt(&mut self, bus: &mut Bus, vector: u32) {
+        let new_pcbp = bus.read_word((0x8c + (4 * vector)) as usize, AccessCode::AddressFetch).unwrap();
+        self.irq_push(bus, self.r[R_PCBP]).unwrap();
+
+        println!("[on_interrupt] new_pcbp = 0x{:08x}", new_pcbp);
+        println!("[on_interrupt] old_pcbp = 0x{:08x}", self.r[R_PCBP]);
+        println!("[on_interrupt] old_pc = 0x{:08x}", self.r[R_PC]);
+
+        println!("[on_interrupt] Dump new_pcbp:");
+        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp, bus.read_word(new_pcbp as usize, AccessCode::AddressFetch).unwrap());
+        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 4, bus.read_word((new_pcbp + 4) as usize, AccessCode::AddressFetch).unwrap());
+        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 8, bus.read_word((new_pcbp + 8) as usize, AccessCode::AddressFetch).unwrap());
+        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 12, bus.read_word((new_pcbp + 12) as usize, AccessCode::AddressFetch).unwrap());
+        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 16, bus.read_word((new_pcbp + 16) as usize, AccessCode::AddressFetch).unwrap());
+
+        self.r[R_PSW] &= !(F_ISC|F_TM|F_ET);
+        self.r[R_PSW] |= 1;
+
+        self.context_switch_1(bus, new_pcbp).unwrap();
+        self.context_switch_2(bus, new_pcbp).unwrap();
+
+        println!("[on_interrupt] new_pc = 0x{:08x}", self.r[R_PC]);
+
+        self.r[R_PSW] &= !(F_ISC|F_TM|F_ET);
+        self.r[R_PSW] |= 7 << 3;
+        self.r[R_PSW] |= 3;
+
+        self.context_switch_3(bus).unwrap();
+    }
+
+    fn handle_pending_interrupts(&mut self, bus: &mut Bus) {
+        let cpu_ipl = (self.r[R_PSW] >> 13) & 0xf;
+
+        if cpu_ipl < 14 && self.ipl14 {
+            println!("HANDLING INTERRUPT IPL 14 (cpu IPL = {})", cpu_ipl);
+            self.on_interrupt(bus, 0x3c);
+            self.ipl14 = false;
+        }
+    }
+
     fn dispatch(&mut self, bus: &mut Bus) -> Result<i32, CpuError> {
+        self.steps += 1;
         let instr = self.decode_instruction(bus)?;
         self.history.push(HistoryEntry::new(&instr, self.r[R_PC]));
         let mut pc_increment: i32 = instr.bytes as i32;
+
+
+        // HACK HACK HACK
+        // TODO: Replace with real logic.
+        if self.steps > 2000000 && self.steps % 250000 == 0 {
+            self.ipl14 = true;
+        }
+
+        self.handle_pending_interrupts(bus);
 
         // println!("Decoded: {} (0x{:x})", instr.mnemonic.name, instr.mnemonic.opcode);
 
@@ -761,7 +821,7 @@ impl Cpu {
 
                 let a = self.read_op(bus, src1)?;
                 let b = self.read_op(bus, src2)?;
-                let result = (a as u64) << (b & 0x1f);
+                let result = (b as u64) << (a & 0x1f);
                 self.write_op(bus, dst, result as u32)?;
 
                 self.set_nz_flags(result as u32, dst);
@@ -852,11 +912,9 @@ impl Cpu {
             BITW | BITH | BITB => {
                 let src1 = &instr.operands[0];
                 let src2 = &instr.operands[1];
-
                 let a = self.read_op(bus, src1)?;
                 let b = self.read_op(bus, src2)?;
                 let result = a & b;
-
                 self.set_nz_flags(result, src2);
                 self.set_c_flag(false);
                 self.set_v_flag(false);
@@ -1303,7 +1361,6 @@ impl Cpu {
                     }
                     _ => {}
                 };
-
                 self.write_op(bus, dst, result)?;
                 self.set_nz_flags(result, dst);
                 self.set_c_flag(false);
@@ -1313,21 +1370,19 @@ impl Cpu {
                 let count = &instr.operands[0];
                 let src = &instr.operands[1];
                 let dst = &instr.operands[2];
-
                 let a = self.read_op(bus, src)?;
                 let b = self.read_op(bus, count)? & 0x1f;
-
                 let result = a >> b;
-
+                self.write_op(bus, dst, result)?;
                 self.set_nz_flags(result, dst);
                 self.set_c_flag(false);
                 self.set_v_flag_op(result, dst);
             }
-            GATE => println!("[GATE] Unimplemented."),
             MCOMW | MCOMH | MCOMB => {
                 let dst = &instr.operands[1];
                 let a = self.read_op(bus, &instr.operands[0])?;
                 let result = !a;
+                self.write_op(bus, dst, result)?;
                 self.set_nz_flags(result, dst);
                 self.set_c_flag(false);
                 self.set_v_flag_op(result, dst);
@@ -1336,6 +1391,7 @@ impl Cpu {
                 let dst = &instr.operands[1];
                 let a = self.read_op(bus, &instr.operands[0])?;
                 let result = !a + 1;
+                self.write_op(bus, dst, result)?;
                 self.set_nz_flags(result, dst);
                 self.set_c_flag(false);
                 self.set_v_flag_op(result, dst);
@@ -1367,12 +1423,10 @@ impl Cpu {
                 let count = &instr.operands[0];
                 let src = &instr.operands[1];
                 let dst = &instr.operands[2];
-
                 let a = self.read_op(bus, count)? & 0x1f;
                 let b = self.read_op(bus, src)?;
-
                 let result = b.rotate_right(a);
-
+                self.write_op(bus, dst, result)?;
                 self.set_nz_flags(result, dst);
                 self.set_c_flag(false);
                 self.set_v_flag(false);
@@ -1501,7 +1555,6 @@ impl Cpu {
                 let result = self.read_op(bus, src)? * self.read_op(bus, dst)?;
 
                 self.write_op(bus, dst, result)?;
-
                 self.set_nz_flags(result, dst);
                 self.set_c_flag(false);
                 self.set_v_flag_op(result, dst);
@@ -1581,6 +1634,7 @@ impl Cpu {
 
                 while r < R_FP {
                     self.r[r] = bus.read_word(c as usize, AccessCode::AddressFetch)?;
+                    println!("[RESTORE] Restored %r{} = 0x{:08x}", r, self.r[r]);
                     r += 1;
                     c += 4;
                 }
@@ -1641,6 +1695,7 @@ impl Cpu {
                 pc_increment = 0;
             }
             RET => {
+                println!("RET: PC = 0x{:08x}", self.r[R_PC]);
                 let a = self.r[R_AP];
                 let b = bus.read_word((self.r[R_SP] - 4) as usize, AccessCode::AddressFetch)?;
                 let c = bus.read_word((self.r[R_SP] - 8) as usize, AccessCode::AddressFetch)?;
@@ -1648,6 +1703,31 @@ impl Cpu {
                 self.r[R_AP] = b;
                 self.r[R_PC] = c;
                 self.r[R_SP] = a;
+
+                pc_increment = 0;
+            }
+            RETPS => {
+                let a = self.irq_pop(bus)?;
+                let b = bus.read_word(a as usize, AccessCode::AddressFetch)?;
+                self.r[R_PSW] &= !F_R;
+                self.r[R_PSW] |= b & F_R;
+
+                self.context_switch_2(bus, a)?;
+                self.context_switch_3(bus)?;
+
+                if self.r[R_PSW] & F_R != 0 {
+                    self.r[R_FP] = bus.read_word((a + 24) as usize, AccessCode::AddressFetch)?;
+                    self.r[0] = bus.read_word((a + 28) as usize, AccessCode::AddressFetch)?;
+                    self.r[1] = bus.read_word((a + 32) as usize, AccessCode::AddressFetch)?;
+                    self.r[2] = bus.read_word((a + 36) as usize, AccessCode::AddressFetch)?;
+                    self.r[3] = bus.read_word((a + 40) as usize, AccessCode::AddressFetch)?;
+                    self.r[4] = bus.read_word((a + 44) as usize, AccessCode::AddressFetch)?;
+                    self.r[5] = bus.read_word((a + 48) as usize, AccessCode::AddressFetch)?;
+                    self.r[6] = bus.read_word((a + 52) as usize, AccessCode::AddressFetch)?;
+                    self.r[7] = bus.read_word((a + 56) as usize, AccessCode::AddressFetch)?;
+                    self.r[8] = bus.read_word((a + 60) as usize, AccessCode::AddressFetch)?;
+                    self.r[R_AP] = bus.read_word((a + 20) as usize, AccessCode::AddressFetch)?;
+                }
 
                 pc_increment = 0;
             }
@@ -1663,6 +1743,7 @@ impl Cpu {
 
                 while r < R_FP {
                     bus.write_word(self.r[R_SP] as usize + stack_offset, self.r[r])?;
+                    println!("[RESTORE] Saved %r{} = 0x{:08x}", r, self.r[r]);
                     r += 1;
                     stack_offset += 4;
                 }
@@ -1705,6 +1786,35 @@ impl Cpu {
                 self.set_z_flag(a == 0);
                 self.set_c_flag(false);
                 self.set_v_flag(false);
+            }
+            XORW2 | XORH2 | XORB2 => {
+                let src = &instr.operands[0];
+                let dst = &instr.operands[1];
+
+                let a = self.read_op(bus, src)?;
+                let b = self.read_op(bus, dst)?;
+
+                let result = a ^ b;
+
+                self.write_op(bus, dst, result)?;
+                self.set_nz_flags(result, dst);
+                self.set_c_flag(false);
+                self.set_v_flag_op(result, dst);
+            }
+            XORW3 | XORH3 | XORB3 => {
+                let src1 = &instr.operands[0];
+                let src2 = &instr.operands[1];
+                let dst = &instr.operands[2];
+
+                let a = self.read_op(bus, src1)?;
+                let b = self.read_op(bus, src2)?;
+
+                let result = a ^ b;
+
+                self.write_op(bus, dst, result)?;
+                self.set_nz_flags(result, dst);
+                self.set_c_flag(false);
+                self.set_v_flag_op(result, dst);
             }
             _ => {
                 println!("Unhandled op: {:?}", instr);
@@ -2092,6 +2202,7 @@ impl Cpu {
     pub fn set_isc(&mut self, val: u32) {
         self.r[R_PSW] &= !F_ISC; // Clear existing value
         self.r[R_PSW] |= (val & 0xf) << 3; // Set new value
+        println!("*** After setting ISC to {}, PSW = 0x{:08x}", val, self.r[R_PSW]);
     }
 
     pub fn set_priv_level(&mut self, level: CpuLevel) {
@@ -2144,6 +2255,10 @@ impl Cpu {
 
     pub fn get_pc(&self) -> u32 {
         self.r[R_PC]
+    }
+
+    pub fn get_psw(&self) -> u32 {
+        self.r[R_PSW]
     }
 }
 

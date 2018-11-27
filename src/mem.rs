@@ -89,7 +89,7 @@ impl Device for Mem {
                 u32::from(self.ram[offset]).wrapping_shl(24)
                     | u32::from(self.ram[offset + 1]).wrapping_shl(16)
                     | u32::from(self.ram[offset + 2]).wrapping_shl(8)
-                    | u32::from(self.ram[offset + 3]),
+                    | u32::from(self.ram[offset + 3])
             )
         }
     }

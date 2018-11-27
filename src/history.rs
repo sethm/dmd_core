@@ -124,6 +124,21 @@ impl HistoryEntry {
                     None => "???".to_owned()
                 }
             }
+            AddrMode::RegisterDeferred => {
+                match op.register {
+                    Some(r) => match r {
+                        9 => "(%fp)".to_owned(),
+                        10 => "(%ap)".to_owned(),
+                        11 => "(%psw".to_owned(),
+                        12 => "(%sp)".to_owned(),
+                        13 => "(%pcbp)".to_owned(),
+                        14 => "(%isp)".to_owned(),
+                        15 => "(%pc)".to_owned(),
+                        _ => format!("(%r{})", r),
+                    }
+                    None => "???".to_owned()
+                }
+            }
             _ => format!("0x{:x}", op.embedded)
         }
     }

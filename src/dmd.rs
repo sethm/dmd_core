@@ -44,6 +44,14 @@ impl Dmd {
         self.cpu.get_pc()
     }
 
+    pub fn get_psw(&self) -> u32 {
+        self.cpu.get_psw()
+    }
+
+    pub fn get_register(&self, reg: u8) -> u32 {
+        self.cpu.r[reg as usize]
+    }
+
     pub fn step_with_error(&mut self) -> Result<(), CpuError> {
         self.cpu.step_with_error(&mut self.bus)
     }
