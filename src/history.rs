@@ -153,12 +153,22 @@ impl HistoryEntry {
         }
 
         let mut op_vec = vec!();
+        let mut val_vec = vec!();
 
         for op in &instr.operands {
             op_vec.push(HistoryEntry::decode_operand(&op));
         }
 
+        for op in &instr.operands {
+            val_vec.push(format!("{:08x}", op.data));
+        }
+
         decoded.push_str(op_vec.join(",").as_str());
+
+        if !val_vec.is_empty() {
+            decoded.push_str("\n         \t\t");
+            decoded.push_str(val_vec.join(",").as_str());
+        }
 
         decoded
     }
@@ -234,7 +244,7 @@ mod tests {
 
     #[test]
     fn creates_history_with_initial_capacity() {
-        let history = History::new(1024);
+        let history = History::new(10000);
         assert_eq!(1024, history.capacity());
     }
 

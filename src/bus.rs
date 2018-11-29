@@ -1,6 +1,7 @@
 use err::BusError;
 
 use mem::Mem;
+use duart::Duart;
 use std::fmt::Debug;
 use std::ops::Range;
 
@@ -54,22 +55,24 @@ pub trait Device: Send + Sync + Debug {
 #[derive(Debug)]
 pub struct Bus {
     rom: Mem,
-    duart: Mem, // TODO: change to DUART when implemented
+    duart: Duart,
     scc: Mem,   // TODO: Remove
     vid: Mem,   // TODO: Figure out what device this really is
     bbram: Mem, // TODO: change to BBRAM when implemented
     ram: Mem,
+    interrupts: u16
 }
 
 impl Bus {
     pub fn new(mem_size: usize) -> Bus {
         Bus {
             rom: Mem::new(0, 0x20000, true),
-            duart: Mem::new(0x200000, 0x40, false),
+            duart: Duart::new(),
             scc: Mem::new(0x300000, 0x100, false),
             vid: Mem::new(0x500000, 0x2, false),
             bbram: Mem::new(0x600000, 0x2000, false),
             ram: Mem::new(0x700000, mem_size, false),
+            interrupts: 0
         }
     }
 
@@ -159,7 +162,26 @@ impl Bus {
 
     pub fn video_ram(&self) -> Result<&[u8], BusError> {
         self.ram.as_slice(0x0..0x19000)
-        // self.ram.as_slice(0x19000..0x32000)
+    }
+
+    pub fn get_interrupts(&mut self) -> Option<u16> {
+        if self.duart.get_interrupt() {
+            self.interrupts |= 0x04;
+        }
+
+        if self.interrupts > 0 {
+            Some(self.interrupts)
+        } else {
+            None
+        }
+    }
+
+    pub fn clear_interrupts(&mut self, vec: u16) {
+        self.interrupts &= !vec;
+    }
+
+    pub fn keyboard(&mut self, keycode: u8) {
+        self.duart.keyboard(keycode);
     }
 }
 

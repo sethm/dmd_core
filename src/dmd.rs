@@ -55,6 +55,10 @@ impl Dmd {
     pub fn step_with_error(&mut self) -> Result<(), CpuError> {
         self.cpu.step_with_error(&mut self.bus)
     }
+
+    pub fn keyboard(&mut self, keycode: u8) {
+        self.bus.keyboard(keycode);
+    }
 }
 
 #[cfg(test)]
