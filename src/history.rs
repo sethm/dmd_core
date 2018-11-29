@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn creates_history_with_initial_capacity() {
-        let history = History::new(10000);
+        let history = History::new(1024);
         assert_eq!(1024, history.capacity());
     }
 
