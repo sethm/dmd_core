@@ -59,6 +59,18 @@ impl Dmd {
     pub fn keyboard(&mut self, keycode: u8) {
         self.bus.keyboard(keycode);
     }
+
+    pub fn mouse_move(&mut self, x: u16, y: u16) {
+        self.bus.mouse_move(x, y);
+    }
+
+    pub fn mouse_down(&mut self, button: u8) {
+        self.bus.mouse_down(button);
+    }
+
+    pub fn mouse_up(&mut self, button: u8) {
+        self.bus.mouse_up(button);
+    }
 }
 
 #[cfg(test)]

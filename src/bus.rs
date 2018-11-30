@@ -2,6 +2,7 @@ use err::BusError;
 
 use mem::Mem;
 use duart::Duart;
+use mouse::Mouse;
 use std::fmt::Debug;
 use std::ops::Range;
 
@@ -56,11 +57,12 @@ pub trait Device: Send + Sync + Debug {
 pub struct Bus {
     rom: Mem,
     duart: Duart,
-    scc: Mem,   // TODO: Remove
-    vid: Mem,   // TODO: Figure out what device this really is
-    bbram: Mem, // TODO: change to BBRAM when implemented
+    scc: Mem,      // TODO: Remove
+    mouse: Mouse,
+    vid: Mem,      // TODO: Figure out what device this really is
+    bbram: Mem,    // TODO: change to BBRAM when implemented
     ram: Mem,
-    interrupts: u16
+    interrupts: u16,
 }
 
 impl Bus {
@@ -69,10 +71,11 @@ impl Bus {
             rom: Mem::new(0, 0x20000, true),
             duart: Duart::new(),
             scc: Mem::new(0x300000, 0x100, false),
+            mouse: Mouse::new(),
             vid: Mem::new(0x500000, 0x2, false),
             bbram: Mem::new(0x600000, 0x2000, false),
             ram: Mem::new(0x700000, mem_size, false),
-            interrupts: 0
+            interrupts: 0,
         }
     }
 
@@ -87,6 +90,10 @@ impl Bus {
 
         if address >= 0x300000 && address < 0x300100 {
             return Ok(&mut self.scc);
+        }
+
+        if address >= 0x400000 && address < 0x400004 {
+            return Ok(&mut self.mouse);
         }
 
         if address >= 0x500000 && address < 0x500002 {
@@ -165,9 +172,10 @@ impl Bus {
     }
 
     pub fn get_interrupts(&mut self) -> Option<u16> {
-        if self.duart.get_interrupt() {
-            self.interrupts |= 0x04;
-        }
+        match self.duart.get_interrupt() {
+            Some(i) => self.interrupts |= i,
+            None => {}
+        };
 
         if self.interrupts > 0 {
             Some(self.interrupts)
@@ -182,6 +190,19 @@ impl Bus {
 
     pub fn keyboard(&mut self, keycode: u8) {
         self.duart.keyboard(keycode);
+    }
+
+    pub fn mouse_move(&mut self, x: u16, y: u16) {
+        self.mouse.x = x;
+        self.mouse.y = y;
+    }
+
+    pub fn mouse_down(&mut self, button: u8) {
+        self.duart.mouse_down(button);
+    }
+
+    pub fn mouse_up(&mut self, button: u8) {
+        self.duart.mouse_up(button);
     }
 }
 

@@ -1,0 +1,69 @@
+use bus::Device;
+use std::ops::Range;
+use bus::AccessCode;
+use err::BusError;
+
+const START_ADDRESS: usize = 0x400000;
+const END_ADDRESS: usize = 0x4000004;
+const ADDRESS_RANGE: Range<usize> = START_ADDRESS..END_ADDRESS;
+
+#[derive(Debug)]
+pub struct Mouse {
+    pub x: u16,
+    pub y: u16,
+}
+
+impl Mouse {
+    pub fn new() -> Mouse {
+        Mouse {
+            x: 0,
+            y: 0,
+        }
+    }
+}
+
+impl Device for Mouse {
+    fn address_range(&self) -> &Range<usize> {
+        &ADDRESS_RANGE
+    }
+
+    fn name(&self) -> &str {
+        "MOUSE"
+    }
+
+    fn is_read_only(&self) -> bool {
+        false
+    }
+
+    fn read_byte(&mut self, address: usize, access: AccessCode) -> Result<u8, BusError> {
+        unimplemented!()
+    }
+
+    fn read_half(&mut self, address: usize, access: AccessCode) -> Result<u16, BusError> {
+        match address-START_ADDRESS {
+            0 => Ok(self.y),
+            2 => Ok(self.x),
+            _ => Err(BusError::NoDevice(address as u32)),
+        }
+    }
+
+    fn read_word(&mut self, address: usize, access: AccessCode) -> Result<u32, BusError> {
+        unimplemented!()
+    }
+
+    fn write_byte(&mut self, address: usize, val: u8, access: AccessCode) -> Result<(), BusError> {
+        unimplemented!()
+    }
+
+    fn write_half(&mut self, address: usize, val: u16, access: AccessCode) -> Result<(), BusError> {
+        unimplemented!()
+    }
+
+    fn write_word(&mut self, address: usize, val: u32, access: AccessCode) -> Result<(), BusError> {
+        unimplemented!()
+    }
+
+    fn load(&mut self, address: usize, data: &[u8]) -> Result<(), BusError> {
+        unimplemented!()
+    }
+}

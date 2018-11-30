@@ -402,7 +402,7 @@ impl Cpu {
         Cpu {
             r: [0; 16],
             error_context: ErrorContext::None,
-            history: History::new(500),
+            history: History::new(25),
             steps: 0,
             ipl14: false,
         }
@@ -696,14 +696,56 @@ impl Cpu {
         Ok(())
     }
 
-    fn div(&mut self, a: u32, b: u32, _src: &Operand, _dst: &Operand) -> u32 {
-        // TODO: Fix for correct sign
-        b / a
+    fn div(&mut self, a: u32, b: u32, _src: &Operand, dst: &Operand) -> u32 {
+        match dst.data_type {
+            Data::Word => {
+                (b as i32 / a as i32) as u32
+            }
+            Data::Half => {
+                (b as i16 / a as i16) as u32
+            }
+            Data::SByte => {
+                (b as i8 / a as i8) as u32
+            }
+            Data::UWord => {
+                b / a
+            }
+            Data::UHalf => {
+                (b as u16 / a as u16) as u32
+            }
+            Data::Byte => {
+                (b as u8 / a as u8) as u32
+            }
+            _ => {
+                b / a
+            }
+        }
     }
 
-    fn modulo(&mut self, a: u32, b: u32, _src: &Operand, _dst: &Operand) -> u32 {
-        // TODO: Fix for correct sign
-        b % a
+    fn modulo(&mut self, a: u32, b: u32, _src: &Operand, dst: &Operand) -> u32 {
+        match dst.data_type {
+            Data::Word => {
+                (b as i32 % a as i32) as u32
+            }
+            Data::Half => {
+                (b as i16 % a as i16) as u32
+            }
+            Data::SByte => {
+                (b as i8 % a as i8) as u32
+            }
+            Data::UWord => {
+                b % a
+            }
+            Data::UHalf => {
+                (b as u16 % a as u16) as u32
+            }
+            Data::Byte => {
+                (b as u8 % a as u8) as u32
+            }
+            _ => {
+                b % a
+            }
+        }
     }
 
     pub fn dump_history(&mut self) {
@@ -724,16 +766,16 @@ impl Cpu {
         let new_pcbp = bus.read_word((0x8c + (4 * vector)) as usize, AccessCode::AddressFetch).unwrap();
         self.irq_push(bus, self.r[R_PCBP]).unwrap();
 
-        println!("[on_interrupt] new_pcbp = 0x{:08x}", new_pcbp);
-        println!("[on_interrupt] old_pcbp = 0x{:08x}", self.r[R_PCBP]);
-        println!("[on_interrupt] old_pc = 0x{:08x}", self.r[R_PC]);
-
-        println!("[on_interrupt] Dump new_pcbp:");
-        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp, bus.read_word(new_pcbp as usize, AccessCode::AddressFetch).unwrap());
-        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 4, bus.read_word((new_pcbp + 4) as usize, AccessCode::AddressFetch).unwrap());
-        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 8, bus.read_word((new_pcbp + 8) as usize, AccessCode::AddressFetch).unwrap());
-        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 12, bus.read_word((new_pcbp + 12) as usize, AccessCode::AddressFetch).unwrap());
-        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 16, bus.read_word((new_pcbp + 16) as usize, AccessCode::AddressFetch).unwrap());
+//        println!("[on_interrupt] new_pcbp = 0x{:08x}", new_pcbp);
+//        println!("[on_interrupt] old_pcbp = 0x{:08x}", self.r[R_PCBP]);
+//        println!("[on_interrupt] old_pc = 0x{:08x}", self.r[R_PC]);
+//
+//        println!("[on_interrupt] Dump new_pcbp:");
+//        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp, bus.read_word(new_pcbp as usize, AccessCode::AddressFetch).unwrap());
+//        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 4, bus.read_word((new_pcbp + 4) as usize, AccessCode::AddressFetch).unwrap());
+//        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 8, bus.read_word((new_pcbp + 8) as usize, AccessCode::AddressFetch).unwrap());
+//        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 12, bus.read_word((new_pcbp + 12) as usize, AccessCode::AddressFetch).unwrap());
+//        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 16, bus.read_word((new_pcbp + 16) as usize, AccessCode::AddressFetch).unwrap());
 
         self.r[R_PSW] &= !(F_ISC|F_TM|F_ET);
         self.r[R_PSW] |= 1;
@@ -741,7 +783,7 @@ impl Cpu {
         self.context_switch_1(bus, new_pcbp).unwrap();
         self.context_switch_2(bus, new_pcbp).unwrap();
 
-        println!("[on_interrupt] new_pc = 0x{:08x}", self.r[R_PC]);
+//        println!("[on_interrupt] new_pc = 0x{:08x}", self.r[R_PC]);
 
         self.r[R_PSW] &= !(F_ISC|F_TM|F_ET);
         self.r[R_PSW] |= 7 << 3;
@@ -760,7 +802,7 @@ impl Cpu {
                 let cpu_ipl = (self.r[R_PSW]) >> 13 & 0xf;
 
                 if cpu_ipl < 14 {
-                    println!("HANDLING INTERRUPT AT IPL: {}", 14);
+//                    println!("HANDLING INTERRUPT AT IPL: {}", 14);
                     self.on_interrupt(bus, (!val) & 0x3F);
                     bus.clear_interrupts(val);
                 }
@@ -1266,10 +1308,9 @@ impl Cpu {
             ARSW3 | ARSH3 | ARSB3 => {
                 let a = self.read_op(bus, &mut instr.operands[1])?;
                 let b = self.read_op(bus, &mut instr.operands[0])? & 0x1f;
-
                 let result = match &instr.operands[1].data_type {
                     Data::Word => {
-                        (a as i32 > b as i32) as u32
+                        (a as i32 >> b as i32) as u32
                     }
                     Data::UWord => {
                         a >> b
@@ -2011,15 +2052,14 @@ impl Cpu {
     pub fn set_isc(&mut self, val: u32) {
         self.r[R_PSW] &= !F_ISC; // Clear existing value
         self.r[R_PSW] |= (val & 0xf) << 3; // Set new value
-        println!("*** After setting ISC to {}, PSW = 0x{:08x}", val, self.r[R_PSW]);
     }
 
     pub fn set_priv_level(&mut self, level: CpuLevel) {
         let val = match level {
-            CpuLevel::User => 0,
-            CpuLevel::Supervisor => 1,
-            CpuLevel::Executive => 2,
-            CpuLevel::Kernel => 3,
+            CpuLevel::Kernel => 0,
+            CpuLevel::Executive => 1,
+            CpuLevel::Supervisor => 2,
+            CpuLevel::User => 3,
         };
         let old_level = (self.r[R_PSW] & F_CM) >> 11;
         self.r[R_PSW] &= !F_PM; // Clear PM
@@ -2031,10 +2071,10 @@ impl Cpu {
     pub fn priv_level(&self) -> CpuLevel {
         let cm = ((self.r[R_PSW] & F_CM) >> 11) & 3;
         match cm {
+            0 => CpuLevel::Kernel,
             1 => CpuLevel::Executive,
             2 => CpuLevel::Supervisor,
-            3 => CpuLevel::Kernel,
-            _ => CpuLevel::User,
+            3 | _ => CpuLevel::User,
         }
     }
 
