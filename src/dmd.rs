@@ -11,9 +11,9 @@ pub struct Dmd {
 }
 
 impl Dmd {
-    pub fn new() -> Dmd {
+    pub fn new<CB: 'static + FnMut(u8) + Send + Sync>(tx_callback: CB) -> Dmd {
         let cpu = Cpu::new();
-        let bus = Bus::new(0x100000);
+        let bus = Bus::new(0x100000, tx_callback);
         Dmd {
             cpu,
             bus,
@@ -56,6 +56,10 @@ impl Dmd {
         self.cpu.step_with_error(&mut self.bus)
     }
 
+    pub fn rx_char(&mut self, character: u8) {
+        self.bus.rx_char(character);
+    }
+
     pub fn keyboard(&mut self, keycode: u8) {
         self.bus.keyboard(keycode);
     }
@@ -77,9 +81,11 @@ impl Dmd {
 mod tests {
     use dmd::Dmd;
 
+    fn tx_callback(_char: u8) {}
+
     #[test]
     fn creates_dmd() {
-        let mut dmd = Dmd::new();
+        let mut dmd = Dmd::new(tx_callback);
         dmd.reset().unwrap();
     }
 }

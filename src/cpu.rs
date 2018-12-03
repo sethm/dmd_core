@@ -2,6 +2,7 @@ use bus::{AccessCode, Bus};
 use history::*;
 use err::*;
 use instr::*;
+use std::time::Instant;
 use std::collections::HashMap;
 
 ///
@@ -394,7 +395,6 @@ pub struct Cpu {
     error_context: ErrorContext,
     history: History,
     steps: u64,
-    ipl14: bool,
 }
 
 impl Cpu {
@@ -402,9 +402,8 @@ impl Cpu {
         Cpu {
             r: [0; 16],
             error_context: ErrorContext::None,
-            history: History::new(25),
+            history: History::new(1000),
             steps: 0,
-            ipl14: false,
         }
     }
 
@@ -755,7 +754,7 @@ impl Cpu {
         for _ in 0..self.history.len() {
             let entry = self.history.next();
             match entry {
-                Some(e) => println!("{}", e),
+                Some(e) => trace!("{}", e),
                 None => {}
             }
         }
@@ -766,16 +765,16 @@ impl Cpu {
         let new_pcbp = bus.read_word((0x8c + (4 * vector)) as usize, AccessCode::AddressFetch).unwrap();
         self.irq_push(bus, self.r[R_PCBP]).unwrap();
 
-//        println!("[on_interrupt] new_pcbp = 0x{:08x}", new_pcbp);
-//        println!("[on_interrupt] old_pcbp = 0x{:08x}", self.r[R_PCBP]);
-//        println!("[on_interrupt] old_pc = 0x{:08x}", self.r[R_PC]);
+//        trace!("[on_interrupt] new_pcbp = 0x{:08x}", new_pcbp);
+//        trace!("[on_interrupt] old_pcbp = 0x{:08x}", self.r[R_PCBP]);
+//        trace!("[on_interrupt] old_pc = 0x{:08x}", self.r[R_PC]);
 //
-//        println!("[on_interrupt] Dump new_pcbp:");
-//        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp, bus.read_word(new_pcbp as usize, AccessCode::AddressFetch).unwrap());
-//        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 4, bus.read_word((new_pcbp + 4) as usize, AccessCode::AddressFetch).unwrap());
-//        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 8, bus.read_word((new_pcbp + 8) as usize, AccessCode::AddressFetch).unwrap());
-//        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 12, bus.read_word((new_pcbp + 12) as usize, AccessCode::AddressFetch).unwrap());
-//        println!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 16, bus.read_word((new_pcbp + 16) as usize, AccessCode::AddressFetch).unwrap());
+//        trace!("[on_interrupt] Dump new_pcbp:");
+//        trace!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp, bus.read_word(new_pcbp as usize, AccessCode::AddressFetch).unwrap());
+//        trace!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 4, bus.read_word((new_pcbp + 4) as usize, AccessCode::AddressFetch).unwrap());
+//        trace!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 8, bus.read_word((new_pcbp + 8) as usize, AccessCode::AddressFetch).unwrap());
+//        trace!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 12, bus.read_word((new_pcbp + 12) as usize, AccessCode::AddressFetch).unwrap());
+//        trace!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 16, bus.read_word((new_pcbp + 16) as usize, AccessCode::AddressFetch).unwrap());
 
         self.r[R_PSW] &= !(F_ISC|F_TM|F_ET);
         self.r[R_PSW] |= 1;
@@ -783,7 +782,7 @@ impl Cpu {
         self.context_switch_1(bus, new_pcbp).unwrap();
         self.context_switch_2(bus, new_pcbp).unwrap();
 
-//        println!("[on_interrupt] new_pc = 0x{:08x}", self.r[R_PC]);
+//        trace!("[on_interrupt] new_pc = 0x{:08x}", self.r[R_PC]);
 
         self.r[R_PSW] &= !(F_ISC|F_TM|F_ET);
         self.r[R_PSW] |= 7 << 3;
@@ -801,8 +800,7 @@ impl Cpu {
             Some(val) => {
                 let cpu_ipl = (self.r[R_PSW]) >> 13 & 0xf;
 
-                if cpu_ipl < 14 {
-//                    println!("HANDLING INTERRUPT AT IPL: {}", 14);
+                if cpu_ipl < 15 {
                     self.on_interrupt(bus, (!val) & 0x3F);
                     bus.clear_interrupts(val);
                 }
@@ -1495,7 +1493,7 @@ impl Cpu {
 
                 while r < R_FP {
                     self.r[r] = bus.read_word(c as usize, AccessCode::AddressFetch)?;
-                    // println!("[RESTORE] Restored %r{} = 0x{:08x}", r, self.r[r]);
+                    // trace!("[RESTORE] Restored %r{} = 0x{:08x}", r, self.r[r]);
                     r += 1;
                     c += 4;
                 }
@@ -1603,7 +1601,7 @@ impl Cpu {
 
                 while r < R_FP {
                     bus.write_word(self.r[R_SP] as usize + stack_offset, self.r[r])?;
-                    // println!("[SAVE] Saved %r{} = 0x{:08x}", r, self.r[r]);
+                    // trace!("[SAVE] Saved %r{} = 0x{:08x}", r, self.r[r]);
                     r += 1;
                     stack_offset += 4;
                 }
@@ -1665,7 +1663,7 @@ impl Cpu {
                 self.set_v_flag_op(result, &instr.operands[2]);
             }
             _ => {
-                println!("Unhandled op: {:?}", instr);
+                trace!("Unhandled op: {:?}", instr);
                 return Err(CpuError::Exception(CpuException::IllegalOpcode));
             }
         };
@@ -2109,6 +2107,10 @@ impl Cpu {
     pub fn get_psw(&self) -> u32 {
         self.r[R_PSW]
     }
+
+    pub fn get_steps(&self) -> u64 {
+        self.steps
+    }
 }
 
 #[cfg(test)]
@@ -2118,6 +2120,8 @@ mod tests {
 
     const BASE: usize = 0x700000;
 
+    fn tx_callback(_char: u8) {}
+
     /// Helper function to set up and prepare a cpu and bus
     /// with a supplied program.
     fn do_with_program<F>(program: &[u8], test: F)
@@ -2125,7 +2129,7 @@ mod tests {
         F: Fn(&mut Cpu, &mut Bus),
     {
         let mut cpu: Cpu = Cpu::new();
-        let mut bus: Bus = Bus::new(0x10000);
+        let mut bus: Bus = Bus::new(0x10000, tx_callback);
 
         bus.load(BASE, &program).unwrap();
         cpu.r[R_PC] = BASE as u32;

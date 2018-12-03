@@ -1,5 +1,8 @@
 #![feature(nll)]
 
+#[macro_use]
+mod macros;
+
 pub mod bus;
 pub mod history;
 pub mod cpu;

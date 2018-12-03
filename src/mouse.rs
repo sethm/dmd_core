@@ -35,11 +35,11 @@ impl Device for Mouse {
         false
     }
 
-    fn read_byte(&mut self, address: usize, access: AccessCode) -> Result<u8, BusError> {
+    fn read_byte(&mut self, _address: usize, _access: AccessCode) -> Result<u8, BusError> {
         unimplemented!()
     }
 
-    fn read_half(&mut self, address: usize, access: AccessCode) -> Result<u16, BusError> {
+    fn read_half(&mut self, address: usize, _access: AccessCode) -> Result<u16, BusError> {
         match address-START_ADDRESS {
             0 => Ok(self.y),
             2 => Ok(self.x),
@@ -47,23 +47,23 @@ impl Device for Mouse {
         }
     }
 
-    fn read_word(&mut self, address: usize, access: AccessCode) -> Result<u32, BusError> {
+    fn read_word(&mut self, _address: usize, _access: AccessCode) -> Result<u32, BusError> {
         unimplemented!()
     }
 
-    fn write_byte(&mut self, address: usize, val: u8, access: AccessCode) -> Result<(), BusError> {
+    fn write_byte(&mut self, _address: usize, _val: u8, _access: AccessCode) -> Result<(), BusError> {
         unimplemented!()
     }
 
-    fn write_half(&mut self, address: usize, val: u16, access: AccessCode) -> Result<(), BusError> {
+    fn write_half(&mut self, _address: usize, _val: u16, _access: AccessCode) -> Result<(), BusError> {
         unimplemented!()
     }
 
-    fn write_word(&mut self, address: usize, val: u32, access: AccessCode) -> Result<(), BusError> {
+    fn write_word(&mut self, _address: usize, _val: u32, _access: AccessCode) -> Result<(), BusError> {
         unimplemented!()
     }
 
-    fn load(&mut self, address: usize, data: &[u8]) -> Result<(), BusError> {
+    fn load(&mut self, _address: usize, _data: &[u8]) -> Result<(), BusError> {
         unimplemented!()
     }
 }

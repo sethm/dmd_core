@@ -53,7 +53,6 @@ pub trait Device: Send + Sync + Debug {
 //  0x700000..0x7fffff     RAM (256K or 1M)
 //
 
-#[derive(Debug)]
 pub struct Bus {
     rom: Mem,
     duart: Duart,
@@ -66,10 +65,10 @@ pub struct Bus {
 }
 
 impl Bus {
-    pub fn new(mem_size: usize) -> Bus {
+    pub fn new<CB: 'static + FnMut(u8) + Send + Sync>(mem_size: usize, tx_callback: CB) -> Bus {
         Bus {
             rom: Mem::new(0, 0x20000, true),
-            duart: Duart::new(),
+            duart: Duart::new(tx_callback),
             scc: Mem::new(0x300000, 0x100, false),
             mouse: Mouse::new(),
             vid: Mem::new(0x500000, 0x2, false),
@@ -204,15 +203,19 @@ impl Bus {
     pub fn mouse_up(&mut self, button: u8) {
         self.duart.mouse_up(button);
     }
+
+    pub fn rx_char(&mut self, char: u8) { self.duart.rx_char(char); }
 }
 
 #[cfg(test)]
 mod tests {
     use bus::Bus;
 
+    fn tx_callback(_char: u8) {}
+
     #[test]
     fn should_fail_on_alignment_errors() {
-        let mut bus: Bus = Bus::new(0x10000);
+        let mut bus: Bus = Bus::new(0x10000, tx_callback);
 
         assert!(bus.write_byte(0x700000, 0x1f).is_ok());
         assert!(bus.write_half(0x700000, 0x1f1f).is_ok());
