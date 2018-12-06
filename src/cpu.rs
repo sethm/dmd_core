@@ -1,8 +1,7 @@
 use bus::{AccessCode, Bus};
-use history::*;
 use err::*;
+use history::*;
 use instr::*;
-use std::time::Instant;
 use std::collections::HashMap;
 
 ///
@@ -46,6 +45,17 @@ const R_SP: usize = 12;
 const R_PCBP: usize = 13;
 const R_ISP: usize = 14;
 const R_PC: usize = 15;
+
+const IPL_TABLE: [u32; 64] = [
+    0,  14, 14, 14, 14, 14, 14, 14,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+];
 
 const WE32100_VERSION: u32 = 0x1a;
 
@@ -138,7 +148,7 @@ impl Operand {
             expanded_type,
             register,
             embedded,
-            data: 0
+            data: 0,
         }
     }
 
@@ -402,7 +412,7 @@ impl Cpu {
         Cpu {
             r: [0; 16],
             error_context: ErrorContext::None,
-            history: History::new(1000),
+            history: History::new(10000),
             steps: 0,
         }
     }
@@ -435,7 +445,7 @@ impl Cpu {
             self.r[R_PCBP] += 12;
         }
 
-        self.set_isc(3);     // Set ISC = 3
+        self.set_isc(3); // Set ISC = 3
 
         Ok(())
     }
@@ -480,10 +490,7 @@ impl Cpu {
                     Some(v) => v,
                     None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 };
-                bus.read_word(
-                    (add_offset(self.r[r], sign_extend_halfword(op.embedded as u16))) as usize,
-                    AccessCode::AddressFetch,
-                )?
+                bus.read_word((add_offset(self.r[r], sign_extend_halfword(op.embedded as u16))) as usize, AccessCode::AddressFetch)?
             }
             AddrMode::ByteDisplacement => {
                 let r = match op.register {
@@ -585,7 +592,7 @@ impl Cpu {
         self.r[R_PSW] &= !F_R;
         self.r[R_PSW] |= bus.read_word(new_pcbp as usize, AccessCode::AddressFetch)? & F_R;
 
-        // Save the current PSW and SP in the PCB
+        // Save the current PSW and SP in the old PCB
         bus.write_word(self.r[R_PCBP] as usize, self.r[R_PSW])?;
         bus.write_word((self.r[R_PCBP] + 8) as usize, self.r[R_SP])?;
 
@@ -602,6 +609,8 @@ impl Cpu {
             bus.write_word((self.r[R_PCBP] + 56) as usize, self.r[7])?;
             bus.write_word((self.r[R_PCBP] + 60) as usize, self.r[8])?;
             bus.write_word((self.r[R_PCBP] + 20) as usize, self.r[R_AP])?;
+
+            self.r[R_FP] = self.r[R_PCBP] + 52;
         }
 
         Ok(())
@@ -612,8 +621,7 @@ impl Cpu {
 
         // Put new PSW, PC, and SP values from PCB into registers
         self.r[R_PSW] = bus.read_word(self.r[R_PCBP] as usize, AccessCode::AddressFetch)?;
-        // Clear TM
-        self.r[R_PSW] &= !(F_TM);
+        self.r[R_PSW] &= !F_TM;
         self.r[R_PC] = bus.read_word((self.r[R_PCBP] + 4) as usize, AccessCode::AddressFetch)?;
         self.r[R_SP] = bus.read_word((self.r[R_PCBP] + 8) as usize, AccessCode::AddressFetch)?;
 
@@ -697,94 +705,53 @@ impl Cpu {
 
     fn div(&mut self, a: u32, b: u32, _src: &Operand, dst: &Operand) -> u32 {
         match dst.data_type {
-            Data::Word => {
-                (b as i32 / a as i32) as u32
-            }
-            Data::Half => {
-                (b as i16 / a as i16) as u32
-            }
-            Data::SByte => {
-                (b as i8 / a as i8) as u32
-            }
-            Data::UWord => {
-                b / a
-            }
-            Data::UHalf => {
-                (b as u16 / a as u16) as u32
-            }
-            Data::Byte => {
-                (b as u8 / a as u8) as u32
-            }
-            _ => {
-                b / a
-            }
+            Data::Word => (b as i32 / a as i32) as u32,
+            Data::Half => (b as i16 / a as i16) as u32,
+            Data::SByte => (b as i8 / a as i8) as u32,
+            Data::UWord => b / a,
+            Data::UHalf => (b as u16 / a as u16) as u32,
+            Data::Byte => (b as u8 / a as u8) as u32,
+            _ => b / a,
         }
     }
 
     fn modulo(&mut self, a: u32, b: u32, _src: &Operand, dst: &Operand) -> u32 {
         match dst.data_type {
-            Data::Word => {
-                (b as i32 % a as i32) as u32
-            }
-            Data::Half => {
-                (b as i16 % a as i16) as u32
-            }
-            Data::SByte => {
-                (b as i8 % a as i8) as u32
-            }
-            Data::UWord => {
-                b % a
-            }
-            Data::UHalf => {
-                (b as u16 % a as u16) as u32
-            }
-            Data::Byte => {
-                (b as u8 % a as u8) as u32
-            }
-            _ => {
-                b % a
-            }
+            Data::Word => (b as i32 % a as i32) as u32,
+            Data::Half => (b as i16 % a as i16) as u32,
+            Data::SByte => (b as i8 % a as i8) as u32,
+            Data::UWord => b % a,
+            Data::UHalf => (b as u16 % a as u16) as u32,
+            Data::Byte => (b as u8 % a as u8) as u32,
+            _ => b % a,
         }
     }
 
     pub fn dump_history(&mut self) {
         if self.history.len() == 0 {
-            return
+            return;
         }
         for _ in 0..self.history.len() {
             let entry = self.history.next();
             match entry {
-                Some(e) => trace!("{}", e),
+                Some(e) => println!("{}", e),
                 None => {}
             }
         }
     }
 
     // TODO: Remove unwraps
-    fn on_interrupt(&mut self, bus: &mut Bus, vector: u16) {
-        let new_pcbp = bus.read_word((0x8c + (4 * vector)) as usize, AccessCode::AddressFetch).unwrap();
+    fn on_interrupt(&mut self, bus: &mut Bus, vector: u8) {
+        let new_pcbp = bus.read_word((0x8c + (4 * (vector as u32))) as usize, AccessCode::AddressFetch).unwrap();
         self.irq_push(bus, self.r[R_PCBP]).unwrap();
 
-//        trace!("[on_interrupt] new_pcbp = 0x{:08x}", new_pcbp);
-//        trace!("[on_interrupt] old_pcbp = 0x{:08x}", self.r[R_PCBP]);
-//        trace!("[on_interrupt] old_pc = 0x{:08x}", self.r[R_PC]);
-//
-//        trace!("[on_interrupt] Dump new_pcbp:");
-//        trace!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp, bus.read_word(new_pcbp as usize, AccessCode::AddressFetch).unwrap());
-//        trace!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 4, bus.read_word((new_pcbp + 4) as usize, AccessCode::AddressFetch).unwrap());
-//        trace!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 8, bus.read_word((new_pcbp + 8) as usize, AccessCode::AddressFetch).unwrap());
-//        trace!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 12, bus.read_word((new_pcbp + 12) as usize, AccessCode::AddressFetch).unwrap());
-//        trace!("[on_interrupt]          0x{:08x}: 0x{:08x}", new_pcbp + 16, bus.read_word((new_pcbp + 16) as usize, AccessCode::AddressFetch).unwrap());
-
-        self.r[R_PSW] &= !(F_ISC|F_TM|F_ET);
+        self.r[R_PSW] &= !(F_ISC | F_TM | F_ET);
         self.r[R_PSW] |= 1;
 
         self.context_switch_1(bus, new_pcbp).unwrap();
         self.context_switch_2(bus, new_pcbp).unwrap();
 
-//        trace!("[on_interrupt] new_pc = 0x{:08x}", self.r[R_PC]);
-
-        self.r[R_PSW] &= !(F_ISC|F_TM|F_ET);
+        self.r[R_PSW] &= !(F_ISC | F_TM | F_ET);
         self.r[R_PSW] |= 7 << 3;
         self.r[R_PSW] |= 3;
 
@@ -794,14 +761,16 @@ impl Cpu {
     fn dispatch(&mut self, bus: &mut Bus) -> Result<i32, CpuError> {
         self.steps += 1;
 
-        let interrupt: Option<u16> = bus.get_interrupts();
+        // Update anything that needs updating.
+        bus.service();
+
+        let interrupt: Option<u8> = bus.get_interrupts();
 
         match interrupt {
             Some(val) => {
                 let cpu_ipl = (self.r[R_PSW]) >> 13 & 0xf;
-
-                if cpu_ipl < 15 {
-                    self.on_interrupt(bus, (!val) & 0x3F);
+                if cpu_ipl < IPL_TABLE[(val & 0x3f) as usize] {
+                    self.on_interrupt(bus, (!val) & 0x3f);
                     bus.clear_interrupts(val);
                 }
             }
@@ -809,7 +778,6 @@ impl Cpu {
         }
 
         let mut instr = self.decode_instruction(bus)?;
-        let old_pc = self.r[R_PC];
         let mut pc_increment: i32 = instr.bytes as i32;
 
         match instr.opcode {
@@ -1307,25 +1275,13 @@ impl Cpu {
                 let a = self.read_op(bus, &mut instr.operands[1])?;
                 let b = self.read_op(bus, &mut instr.operands[0])? & 0x1f;
                 let result = match &instr.operands[1].data_type {
-                    Data::Word => {
-                        (a as i32 >> b as i32) as u32
-                    }
-                    Data::UWord => {
-                        a >> b
-                    }
-                    Data::Half => {
-                        (a as i16 >> b as i16) as u32
-                    }
-                    Data::UHalf => {
-                        (a as u16 >> b as u16) as u32
-                    }
-                    Data::Byte => {
-                        (a as u8 >> b as u8) as u32
-                    }
-                    Data::SByte => {
-                        (a as i8 >> b as i8) as u32
-                    }
-                    _ => 0
+                    Data::Word => (a as i32 >> b as i32) as u32,
+                    Data::UWord => a >> b,
+                    Data::Half => (a as i16 >> b as i16) as u32,
+                    Data::UHalf => (a as u16 >> b as u16) as u32,
+                    Data::Byte => (a as u8 >> b as u8) as u32,
+                    Data::SByte => (a as i8 >> b as i8) as u32,
+                    _ => 0,
                 };
                 self.write_op(bus, &mut instr.operands[2], result)?;
                 self.set_nz_flags(result, &instr.operands[2]);
@@ -1373,9 +1329,10 @@ impl Cpu {
             }
             SWAPWI | SWAPHI | SWAPBI => {
                 let a = self.read_op(bus, &mut instr.operands[0])?;
-                self.write_op(bus, &mut instr.operands[0], a)?;
+                self.write_op(bus, &mut instr.operands[0], self.r[0])?;
                 self.r[0] = a;
-                self.set_nz_flags(a, &instr.operands[0]);
+                self.set_n_flag((a as i32) < 0);
+                self.set_z_flag(a == 0);
                 self.set_c_flag(false);
                 self.set_v_flag(false);
             }
@@ -1488,12 +1445,11 @@ impl Cpu {
 
                 let mut r = match instr.operands[0].register {
                     Some(r) => r,
-                    None => return Err(CpuError::Exception(CpuException::IllegalOpcode))
+                    None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 };
 
                 while r < R_FP {
                     self.r[r] = bus.read_word(c as usize, AccessCode::AddressFetch)?;
-                    // trace!("[RESTORE] Restored %r{} = 0x{:08x}", r, self.r[r]);
                     r += 1;
                     c += 4;
                 }
@@ -1565,43 +1521,47 @@ impl Cpu {
                 pc_increment = 0;
             }
             RETPS => {
-                let a = self.irq_pop(bus)?;
-                let b = bus.read_word(a as usize, AccessCode::AddressFetch)?;
-                self.r[R_PSW] &= !F_R;
-                self.r[R_PSW] |= b & F_R;
+                match self.priv_level() {
+                    CpuLevel::Kernel => {
+                        let new_pcbp = self.irq_pop(bus)?;
+                        let new_psw = bus.read_word(new_pcbp as usize, AccessCode::AddressFetch)?;
+                        self.r[R_PSW] &= !F_R;
+                        self.r[R_PSW] |= new_psw & F_R;
 
-                self.context_switch_2(bus, a)?;
-                self.context_switch_3(bus)?;
+                        self.context_switch_2(bus, new_pcbp)?;
+                        self.context_switch_3(bus)?;
 
-                if self.r[R_PSW] & F_R != 0 {
-                    self.r[R_FP] = bus.read_word((a + 24) as usize, AccessCode::AddressFetch)?;
-                    self.r[0] = bus.read_word((a + 28) as usize, AccessCode::AddressFetch)?;
-                    self.r[1] = bus.read_word((a + 32) as usize, AccessCode::AddressFetch)?;
-                    self.r[2] = bus.read_word((a + 36) as usize, AccessCode::AddressFetch)?;
-                    self.r[3] = bus.read_word((a + 40) as usize, AccessCode::AddressFetch)?;
-                    self.r[4] = bus.read_word((a + 44) as usize, AccessCode::AddressFetch)?;
-                    self.r[5] = bus.read_word((a + 48) as usize, AccessCode::AddressFetch)?;
-                    self.r[6] = bus.read_word((a + 52) as usize, AccessCode::AddressFetch)?;
-                    self.r[7] = bus.read_word((a + 56) as usize, AccessCode::AddressFetch)?;
-                    self.r[8] = bus.read_word((a + 60) as usize, AccessCode::AddressFetch)?;
-                    self.r[R_AP] = bus.read_word((a + 20) as usize, AccessCode::AddressFetch)?;
+                        if self.r[R_PSW] & F_R != 0 {
+                            self.r[R_FP] = bus.read_word((new_pcbp + 24) as usize, AccessCode::AddressFetch)?;
+                            self.r[0] = bus.read_word((new_pcbp + 28) as usize, AccessCode::AddressFetch)?;
+                            self.r[1] = bus.read_word((new_pcbp + 32) as usize, AccessCode::AddressFetch)?;
+                            self.r[2] = bus.read_word((new_pcbp + 36) as usize, AccessCode::AddressFetch)?;
+                            self.r[3] = bus.read_word((new_pcbp + 40) as usize, AccessCode::AddressFetch)?;
+                            self.r[4] = bus.read_word((new_pcbp + 44) as usize, AccessCode::AddressFetch)?;
+                            self.r[5] = bus.read_word((new_pcbp + 48) as usize, AccessCode::AddressFetch)?;
+                            self.r[6] = bus.read_word((new_pcbp + 52) as usize, AccessCode::AddressFetch)?;
+                            self.r[7] = bus.read_word((new_pcbp + 56) as usize, AccessCode::AddressFetch)?;
+                            self.r[8] = bus.read_word((new_pcbp + 60) as usize, AccessCode::AddressFetch)?;
+                            self.r[R_AP] = bus.read_word((new_pcbp + 20) as usize, AccessCode::AddressFetch)?;
+                        }
+
+                        pc_increment = 0;
+                    },
+                    _ => return Err(CpuError::Exception(CpuException::PrivilegedOpcode)),
                 }
-
-                pc_increment = 0;
             }
             SAVE => {
                 bus.write_word(self.r[R_SP] as usize, self.r[R_FP])?;
 
                 let mut r = match instr.operands[0].register {
                     Some(r) => r,
-                    None => return Err(CpuError::Exception(CpuException::IllegalOpcode))
+                    None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 };
 
                 let mut stack_offset = 4;
 
                 while r < R_FP {
                     bus.write_word(self.r[R_SP] as usize + stack_offset, self.r[r])?;
-                    // trace!("[SAVE] Saved %r{} = 0x{:08x}", r, self.r[r]);
                     r += 1;
                     stack_offset += 4;
                 }
@@ -1663,12 +1623,10 @@ impl Cpu {
                 self.set_v_flag_op(result, &instr.operands[2]);
             }
             _ => {
-                trace!("Unhandled op: {:?}", instr);
+                trace!("Unhandled opcode: {:?}", instr);
                 return Err(CpuError::Exception(CpuException::IllegalOpcode));
             }
         };
-
-        self.history.push(HistoryEntry::new(&instr, old_pc));
 
         Ok(pc_increment)
     }
@@ -2095,8 +2053,8 @@ impl Cpu {
     }
 
     pub fn irq_pop(&mut self, bus: &mut Bus) -> Result<u32, CpuError> {
-        let result = bus.read_word((self.r[R_ISP] - 4) as usize, AccessCode::AddressFetch)?;
         self.r[R_ISP] -= 4;
+        let result = bus.read_word((self.r[R_ISP]) as usize, AccessCode::AddressFetch)?;
         Ok(result)
     }
 

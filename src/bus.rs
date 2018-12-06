@@ -61,7 +61,7 @@ pub struct Bus {
     vid: Mem,      // TODO: Figure out what device this really is
     bbram: Mem,    // TODO: change to BBRAM when implemented
     ram: Mem,
-    interrupts: u16,
+    interrupts: u8,
 }
 
 impl Bus {
@@ -170,7 +170,11 @@ impl Bus {
         self.ram.as_slice(0x0..0x19000)
     }
 
-    pub fn get_interrupts(&mut self) -> Option<u16> {
+    pub fn service(&mut self) {
+        self.duart.service();
+    }
+
+    pub fn get_interrupts(&mut self) -> Option<u8> {
         match self.duart.get_interrupt() {
             Some(i) => self.interrupts |= i,
             None => {}
@@ -183,12 +187,12 @@ impl Bus {
         }
     }
 
-    pub fn clear_interrupts(&mut self, vec: u16) {
-        self.interrupts &= !vec;
+    pub fn clear_interrupts(&mut self, vec: u8) {
+        self.interrupts &= (!vec) & 0x3f;
     }
 
     pub fn keyboard(&mut self, keycode: u8) {
-        self.duart.keyboard(keycode);
+        self.duart.handle_keyboard(keycode);
     }
 
     pub fn mouse_move(&mut self, x: u16, y: u16) {

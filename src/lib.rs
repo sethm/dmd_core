@@ -17,3 +17,9 @@ pub mod rom_lo;
 
 #[macro_use]
 extern crate lazy_static;
+
+use std::time::Instant;
+
+lazy_static! {
+    pub static ref START_TIME: Instant = Instant::now();
+}
