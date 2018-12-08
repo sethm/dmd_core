@@ -1,5 +1,5 @@
-use bus::*;
-use err::BusError;
+use crate::bus::*;
+use crate::err::BusError;
 
 use std::fmt::Debug;
 use std::fmt::Error;

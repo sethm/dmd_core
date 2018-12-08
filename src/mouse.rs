@@ -1,7 +1,7 @@
-use bus::Device;
+use crate::bus::Device;
+use crate::bus::AccessCode;
+use crate::err::BusError;
 use std::ops::Range;
-use bus::AccessCode;
-use err::BusError;
 
 const START_ADDRESS: usize = 0x400000;
 const END_ADDRESS: usize = 0x4000004;

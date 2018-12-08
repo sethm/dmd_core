@@ -1,8 +1,8 @@
-use err::BusError;
-
-use mem::Mem;
-use duart::Duart;
-use mouse::Mouse;
+use crate::err::BusError;
+use crate::mem::Mem;
+use crate::duart::Duart;
+use crate::mouse::Mouse;
+use crate::err::DuartError;
 use std::fmt::Debug;
 use std::ops::Range;
 
@@ -61,7 +61,6 @@ pub struct Bus {
     vid: Mem,      // TODO: Figure out what device this really is
     bbram: Mem,    // TODO: change to BBRAM when implemented
     ram: Mem,
-    interrupts: u8,
 }
 
 impl Bus {
@@ -74,7 +73,6 @@ impl Bus {
             vid: Mem::new(0x500000, 0x2, false),
             bbram: Mem::new(0x600000, 0x2000, false),
             ram: Mem::new(0x700000, mem_size, false),
-            interrupts: 0,
         }
     }
 
@@ -175,20 +173,7 @@ impl Bus {
     }
 
     pub fn get_interrupts(&mut self) -> Option<u8> {
-        match self.duart.get_interrupt() {
-            Some(i) => self.interrupts |= i,
-            None => {}
-        };
-
-        if self.interrupts > 0 {
-            Some(self.interrupts)
-        } else {
-            None
-        }
-    }
-
-    pub fn clear_interrupts(&mut self, vec: u8) {
-        self.interrupts &= (!vec) & 0x3f;
+        self.duart.get_interrupt()
     }
 
     pub fn keyboard(&mut self, keycode: u8) {
@@ -208,12 +193,18 @@ impl Bus {
         self.duart.mouse_up(button);
     }
 
-    pub fn rx_char(&mut self, char: u8) { self.duart.rx_char(char); }
+    pub fn rx_char(&mut self, char: u8) -> Result<(), DuartError> {
+        self.duart.rx_char(char)
+    }
+
+    pub fn rx_ready(&self) -> bool {
+        self.duart.rx_ready()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use bus::Bus;
+    use super::*;
 
     fn tx_callback(_char: u8) {}
 

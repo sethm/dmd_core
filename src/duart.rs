@@ -1,19 +1,34 @@
-use bus::AccessCode;
-use bus::Device;
-use err::BusError;
+use crate::bus::AccessCode;
+use crate::bus::Device;
+use crate::err::BusError;
 use std::fmt::Debug;
 use std::fmt::Error;
 use std::fmt::Formatter;
 use std::ops::Range;
 use std::time::Duration;
 use std::time::Instant;
+use crate::err::DuartError;
 
 const START_ADDR: usize = 0x200000;
 const END_ADDR: usize = 0x2000040;
 const ADDRESS_RANGE: Range<usize> = START_ADDR..END_ADDR;
 
 // Vertical blanks should occur at 60Hz. This value is in nanoseconds
-const VERTICAL_BLANK_DELAY: u32 = 16666666;  // 60 Hz
+const VERTICAL_BLANK_DELAY: u32 = 16_666_666;  // 60 Hz
+
+// Delay rates selected when ACR[7] = 0
+const DELAY_RATES_A: [u32;13] = [
+    200000000, 90909096, 74074072, 50000000,
+    33333336, 16666668, 8333334, 9523810,
+    4166667, 2083333, 1388888, 1041666, 260416,
+];
+
+// Delay rates selected when ACR[7] = 1
+const DELAY_RATES_B: [u32;13] = [
+    133333344, 90909096, 74074072, 66666672,
+    33333336, 16666668, 8333334, 5000000,
+    4166667, 205338, 5555555, 1041666, 520833,
+];
 
 const PORT_0: usize = 0;
 const PORT_1: usize = 1;
@@ -28,7 +43,7 @@ const THRA: u8 = 0x0f;
 const IPCR_ACR: u8 = 0x13;
 const ISR_MASK: u8 = 0x17;
 const MR12B: u8 = 0x23;
-const SR_CSRB: u8 = 0x27;
+const CSRB: u8 = 0x27;
 const CRB: u8 = 0x2b;
 const THRB: u8 = 0x2f;
 const IP_OPCR: u8 = 0x37;
@@ -63,7 +78,6 @@ const CMD_DTX: u8 = 0x08;
 //
 const ISTS_TAI: u8 = 0x01;
 const ISTS_RAI: u8 = 0x02;
-const ISTS_TBI: u8 = 0x10;
 const ISTS_RBI: u8 = 0x20;
 const ISTS_IPC: u8 = 0x80;
 
@@ -82,10 +96,16 @@ struct Port {
     rx_data: u8,
     tx_data: u8,
     mode_ptr: usize,
+    rx_pending: bool,
+    tx_pending: bool,
+    char_delay: Duration,
+    next_rx: Instant,
+    next_tx: Instant,
 }
 
 pub struct Duart {
-    ports: [Port;2],
+    ports: [Port; 2],
+    acr: u8,
     ipcr: u8,
     inprt: u8,
     istat: u8,
@@ -93,7 +113,6 @@ pub struct Duart {
     ivec: u8,
     last_vblank: Instant,
     tx_callback: Option<Box<FnMut(u8) + Send + Sync>>,
-    tx_delay: u32,
 }
 
 impl Duart {
@@ -107,6 +126,11 @@ impl Duart {
                     rx_data: 0,
                     tx_data: 0,
                     mode_ptr: 0,
+                    rx_pending: false,
+                    tx_pending: false,
+                    char_delay: Duration::new(0, 1_000_000),
+                    next_rx: Instant::now(),
+                    next_tx: Instant::now(),
                 },
                 Port {
                     mode: [0; 2],
@@ -115,8 +139,14 @@ impl Duart {
                     rx_data: 0,
                     tx_data: 0,
                     mode_ptr: 0,
+                    rx_pending: false,
+                    tx_pending: false,
+                    char_delay: Duration::new(0, 1_000_000),
+                    next_rx: Instant::now(),
+                    next_tx: Instant::now(),
                 },
             ],
+            acr: 0,
             ipcr: 0x40,
             inprt: 0xb,
             istat: 0,
@@ -124,7 +154,6 @@ impl Duart {
             ivec: 0,
             last_vblank: Instant::now(),
             tx_callback: Some(Box::new(tx_callback)),
-            tx_delay: 0,
         }
     }
 
@@ -137,7 +166,6 @@ impl Duart {
         }
 
         let val = self.ivec;
-        self.ivec = 0;
 
         if val == 0 {
             None
@@ -147,49 +175,33 @@ impl Duart {
     }
 
     pub fn service(&mut self) {
-        if self.tx_delay > 0 {
-            self.tx_delay -= 1;
+        let mut ctx = &mut self.ports[PORT_0];
 
-            if self.tx_delay == 0 {
-                // Finish our transmit.
-                let mut ctx = &mut self.ports[PORT_0];
-                let c = ctx.tx_data;
-
-//                trace!("*** DUART: TX_CHAR (to telnet) 0x{:02x} ({})",
-//                       c,
-//                       if c >= 0x20 && c < 127 {
-//                           c as char
-//                       } else {
-//                           '?'
-//                       });
-
-                ctx.stat |= STS_TXE | STS_TXR;
-                self.istat |= ISTS_TAI;
-                self.ivec |= TX_INT;
-                if (ctx.mode[1] >> 6) & 3 == 0x2 {
-                    // Loopback Mode.
-                    ctx.rx_data = c;
-                    ctx.stat |= STS_RXR;
-                    self.istat |= ISTS_RAI;
-                    self.ivec |= RX_INT;
-                } else {
-                    match &mut self.tx_callback {
-                        Some(cb) => (cb)(c),
-                        None => {}
-                    };
-                }
+        if ctx.tx_pending && Instant::now() >= ctx.next_tx {
+            // Finish our transmit.
+            let c = ctx.tx_data;
+            ctx.conf |= CNF_ETX;
+            ctx.stat |= STS_TXR;
+            ctx.stat |= STS_TXE;
+            self.istat |= ISTS_TAI;
+            self.ivec |= TX_INT;
+            ctx.tx_pending = false;
+            if (ctx.mode[1] >> 6) & 3 == 0x2 {
+                // Loopback Mode.
+                ctx.rx_data = c;
+                ctx.stat |= STS_RXR;
+                self.istat |= ISTS_RAI;
+                self.ivec |= RX_INT;
+            } else {
+                match &mut self.tx_callback {
+                    Some(cb) => (cb)(c),
+                    None => {}
+                };
             }
         }
     }
 
     pub fn handle_keyboard(&mut self, val: u8) {
-//        trace!("*** DUART: KEYBOARD 0x{:02x} ({})",
-//               val,
-//               if val >= 0x20 && val < 127 {
-//                   val as char
-//               } else {
-//                   '?'
-//               });
         let mut ctx = &mut self.ports[PORT_1];
         ctx.rx_data = val;
         ctx.stat |= STS_RXR;
@@ -198,10 +210,15 @@ impl Duart {
     }
 
     pub fn vertical_blank(&mut self) {
-        self.ipcr |= 0x40;
-        self.inprt &= !0x04;
-        self.istat |= ISTS_IPC;
         self.ivec |= MOUSE_BLANK_INT;
+        self.ipcr |= 0x40;
+        self.istat |= ISTS_IPC;
+
+        if self.inprt & 0x04 == 0 {
+            self.ipcr |= 0x40;
+        } else {
+            self.inprt &= !0x04;
+        }
     }
 
     pub fn mouse_down(&mut self, button: u8) {
@@ -245,25 +262,34 @@ impl Duart {
         }
     }
 
-    pub fn rx_char(&mut self, character: u8) {
+    pub fn rx_ready(&self) -> bool {
+        let ctx = &self.ports[PORT_0];
+
+        return (ctx.stat & STS_RXR) != 0;
+    }
+
+    pub fn rx_char(&mut self, c: u8) -> Result<(), DuartError> {
         let mut ctx = &mut self.ports[PORT_0];
 
-        if ctx.conf & CNF_ERX != 0 {
-//            trace!(
-//                "*** DUART: RX_CHAR (from telnet) 0x{:02x} ({})",
-//                character,
-//                if character >= 0x20 && character < 127 {
-//                    character as char
-//                } else {
-//                    '?'
-//                }
-//            );
-            ctx.rx_data = character;
-            ctx.stat |= STS_RXR;
-            self.istat |= ISTS_RAI;
-            self.ivec |= RX_INT;
+        if ctx.rx_pending {
+            if Instant::now() > ctx.next_rx {
+                if ctx.conf & CNF_ERX != 0 {
+                    ctx.rx_pending = false;
+                    ctx.rx_data = c;
+                    ctx.stat |= STS_RXR;
+                    self.istat |= ISTS_RAI;
+                    self.ivec |= RX_INT;
+                } else {
+                    ctx.stat |= STS_OER;
+                }
+                Ok(())
+            } else {
+                Err(DuartError::ReceiverNotReady)
+            }
         } else {
-            ctx.stat |= STS_OER;
+            ctx.next_rx = Instant::now() + ctx.char_delay;
+            ctx.rx_pending = true;
+            Err(DuartError::ReceiverNotReady)
         }
     }
 
@@ -279,17 +305,17 @@ impl Duart {
             ctx.conf &= !CNF_ETX;
             ctx.stat &= !STS_TXR;
             ctx.stat &= !STS_TXE;
+            if port == PORT_0 {
+                self.ivec &= !TX_INT;
+                self.istat &= !ISTS_TAI;
+            }
         } else if cmd & CMD_ETX != 0 {
             ctx.conf |= CNF_ETX;
             ctx.stat |= STS_TXR;
             ctx.stat |= STS_TXE;
-
             if port == PORT_0 {
-                self.ivec = TX_INT;
                 self.istat |= ISTS_TAI;
-            } else {
-                self.ivec = KEYBOARD_INT;
-                self.istat |= ISTS_TBI;
+                self.ivec |= TX_INT;
             }
         }
 
@@ -297,6 +323,13 @@ impl Duart {
         if cmd & CMD_DRX != 0 {
             ctx.conf &= !CNF_ERX;
             ctx.stat &= !STS_RXR;
+            if port == PORT_0 {
+                self.ivec &= !RX_INT;
+                self.istat &= !ISTS_RAI;
+            } else {
+                self.ivec &= !KEYBOARD_INT;
+                self.istat &= !ISTS_RBI;
+            }
         } else if cmd & CMD_ERX != 0 {
             ctx.conf |= CNF_ERX;
             ctx.stat |= STS_RXR;
@@ -306,12 +339,12 @@ impl Duart {
         match (cmd >> 4) & 7 {
             1 => ctx.mode_ptr = 0,
             2 => {
-                ctx.stat &= !STS_RXR;
-                ctx.conf &= !CNF_ERX;
+                ctx.stat |= STS_RXR;
+                ctx.conf |= CNF_ERX;
             }
             3 => {
-                ctx.stat &= !STS_TXR;
-                ctx.stat &= !STS_TXE;
+                ctx.stat |= STS_TXR;
+                ctx.stat |= STS_TXE;
                 ctx.conf &= !CNF_ETX;
             }
             4 => ctx.stat &= !(STS_FER|STS_PER|STS_OER),
@@ -352,15 +385,15 @@ impl Device for Duart {
             }
             THRA => {
                 let mut ctx = &mut self.ports[PORT_0];
-                // CHECK THIS!
                 ctx.stat &= !STS_RXR;
                 self.istat &= !ISTS_RAI;
-                // END CHECK
+                self.ivec &= !RX_INT;
                 Ok(ctx.rx_data)
             }
             IPCR_ACR => {
                 let result = self.ipcr;
                 self.ipcr &= !0x0f;
+                self.ivec = 0;
                 self.istat &= !ISTS_IPC;
                 Ok(result)
             }
@@ -373,13 +406,14 @@ impl Device for Duart {
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
                 Ok(val)
             }
-            SR_CSRB => {
+            CSRB => {
                 Ok(self.ports[PORT_1].stat)
             }
             THRB => {
                 let mut ctx = &mut self.ports[PORT_1];
                 ctx.stat &= !STS_RXR;
                 self.istat &= !ISTS_RBI;
+                self.ivec &= !KEYBOARD_INT;
                 Ok(ctx.rx_data)
             }
             IP_OPCR => {
@@ -405,7 +439,15 @@ impl Device for Duart {
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
             }
             CSRA => {
-                // Not implemented
+                // Set the baud rate.
+                let baud_bits: usize = ((val >> 4) & 0xf) as usize;
+                let delay = if self.acr & 0x80 == 0 {
+                    DELAY_RATES_A[baud_bits]
+                } else {
+                    DELAY_RATES_B[baud_bits]
+                };
+                let mut ctx = &mut self.ports[PORT_0];
+                ctx.char_delay = Duration::new(0, delay);
             }
             CRA => {
                 self.handle_command(val, PORT_0);
@@ -417,11 +459,14 @@ impl Device for Duart {
                 // the transmitter buffer is not empty.
                 // The actual transmit will happen in the 'service'
                 // function.
-                self.tx_delay = 8000;
+                ctx.next_tx = Instant::now() + ctx.char_delay;
+                ctx.tx_pending = true;
                 ctx.stat &= !(STS_TXE | STS_TXR);
+                self.ivec &= !TX_INT;
+                self.istat &= !ISTS_TAI;
             }
             IPCR_ACR => {
-                // Not implemented
+                self.acr = val;
             }
             ISR_MASK => {
                 self.imr = val;

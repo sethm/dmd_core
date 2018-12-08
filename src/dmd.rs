@@ -1,9 +1,10 @@
-use bus::Bus;
-use cpu::Cpu;
-use err::BusError;
-use err::CpuError;
-use rom_hi::HI_ROM;
-use rom_lo::LO_ROM;
+use crate::bus::{Bus, AccessCode};
+use crate::cpu::Cpu;
+use crate::err::BusError;
+use crate::err::CpuError;
+use crate::rom_hi::HI_ROM;
+use crate::rom_lo::LO_ROM;
+use crate::err::DuartError;
 
 pub struct Dmd {
     cpu: Cpu,
@@ -36,12 +37,12 @@ impl Dmd {
         self.cpu.step(&mut self.bus);
     }
 
-    pub fn dump_history(&mut self) {
-        self.cpu.dump_history();
-    }
-
     pub fn get_pc(&self) -> u32 {
         self.cpu.get_pc()
+    }
+
+    pub fn get_ap(&self) -> u32 {
+        self.cpu.get_ap()
     }
 
     pub fn get_psw(&self) -> u32 {
@@ -52,12 +53,23 @@ impl Dmd {
         self.cpu.r[reg as usize]
     }
 
+    pub fn read(&mut self, addr: usize) -> Option<u32> {
+        match self.bus.read_word(addr, AccessCode::AddressFetch) {
+            Ok(d) => Some(d),
+            _ => None,
+        }
+    }
+
     pub fn step_with_error(&mut self) -> Result<(), CpuError> {
         self.cpu.step_with_error(&mut self.bus)
     }
 
-    pub fn rx_char(&mut self, character: u8) {
-        self.bus.rx_char(character);
+    pub fn rx_char(&mut self, character: u8) -> Result<(), DuartError> {
+        self.bus.rx_char(character)
+    }
+
+    pub fn rx_ready(&self) -> bool {
+        self.bus.rx_ready()
     }
 
     pub fn keyboard(&mut self, keycode: u8) {
@@ -79,7 +91,7 @@ impl Dmd {
 
 #[cfg(test)]
 mod tests {
-    use dmd::Dmd;
+    use crate::dmd::Dmd;
 
     fn tx_callback(_char: u8) {}
 
