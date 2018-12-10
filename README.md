@@ -1,5 +1,7 @@
 # AT&T DMD5620 Core
 
+[![Build Status](https://travis-ci.org/sethm/dmd_core.svg?branch=master)](https://travis-ci.org/sethm/dmd_core)
+
 Core logic for an AT&T / Teletype DMD 5620 terminal emulator
 
 ## Description
