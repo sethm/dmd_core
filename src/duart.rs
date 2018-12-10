@@ -1,13 +1,15 @@
 use crate::bus::AccessCode;
 use crate::bus::Device;
 use crate::err::BusError;
+use crate::err::DuartError;
+
 use std::fmt::Debug;
 use std::fmt::Error;
 use std::fmt::Formatter;
 use std::ops::Range;
 use std::time::Duration;
 use std::time::Instant;
-use crate::err::DuartError;
+use std::collections::VecDeque;
 
 const START_ADDR: usize = 0x200000;
 const END_ADDR: usize = 0x2000040;
@@ -112,11 +114,11 @@ pub struct Duart {
     imr: u8,
     ivec: u8,
     last_vblank: Instant,
-    tx_callback: Option<Box<FnMut(u8) + Send + Sync>>,
+    tx_queue: VecDeque<u8>,
 }
 
 impl Duart {
-    pub fn new<CB: 'static + FnMut(u8) + Send + Sync>(tx_callback: CB) -> Duart {
+    pub fn new() -> Duart {
         Duart {
             ports: [
                 Port {
@@ -153,7 +155,7 @@ impl Duart {
             imr: 0,
             ivec: 0,
             last_vblank: Instant::now(),
-            tx_callback: Some(Box::new(tx_callback)),
+            tx_queue: VecDeque::new(),
         }
     }
 
@@ -193,20 +195,9 @@ impl Duart {
                 self.istat |= ISTS_RAI;
                 self.ivec |= RX_INT;
             } else {
-                match &mut self.tx_callback {
-                    Some(cb) => (cb)(c),
-                    None => {}
-                };
+                self.tx_queue.push_front(c);
             }
         }
-    }
-
-    pub fn handle_keyboard(&mut self, val: u8) {
-        let mut ctx = &mut self.ports[PORT_1];
-        ctx.rx_data = val;
-        ctx.stat |= STS_RXR;
-        self.istat |= ISTS_RBI;
-        self.ivec |= KEYBOARD_INT;
     }
 
     pub fn vertical_blank(&mut self) {
@@ -219,6 +210,10 @@ impl Duart {
         } else {
             self.inprt &= !0x04;
         }
+    }
+
+    pub fn tx_poll(&mut self) -> Option<u8> {
+        self.tx_queue.pop_back()
     }
 
     pub fn mouse_down(&mut self, button: u8) {
@@ -266,6 +261,31 @@ impl Duart {
         let ctx = &self.ports[PORT_0];
 
         return (ctx.stat & STS_RXR) != 0;
+    }
+
+    pub fn rx_keyboard(&mut self, c: u8) -> Result<(), DuartError> {
+        let mut ctx = &mut self.ports[PORT_1];
+
+        if ctx.rx_pending {
+            if Instant::now() > ctx.next_rx {
+                if ctx.conf & CNF_ERX != 0 {
+                    ctx.rx_pending = false;
+                    ctx.rx_data = c;
+                    ctx.stat |= STS_RXR;
+                    self.istat |= ISTS_RBI;
+                    self.ivec |= KEYBOARD_INT;
+                } else {
+                    ctx.stat |= STS_OER;
+                }
+                Ok(())
+            } else {
+                Err(DuartError::ReceiverNotReady)
+            }
+        } else {
+            ctx.next_rx = Instant::now() + ctx.char_delay;
+            ctx.rx_pending = true;
+            Err(DuartError::ReceiverNotReady)
+        }
     }
 
     pub fn rx_char(&mut self, c: u8) -> Result<(), DuartError> {

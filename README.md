@@ -19,7 +19,11 @@ terminal, including:
 - WE32100 CPU
 - I/O
 
-This project is written in Rust, and uses [Neon Bindings](https://github.com/neon-bindings/neon)
-to compile down to a Node.js library for later inclusion in an Electron
-JavaScript application that will present the user interface and display
-drawing area.
+Note that there is no user interface: This is a back-end library only.
+It may be used as a component to build a fully-fledged emulator,
+however.
+
+## Emulator Reference Implementation
+
+For a reference implementation emulator that uses this library,
+please see the ["DMD" project on GitHub](https://github.com/sethm/dmd).

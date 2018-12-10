@@ -64,10 +64,10 @@ pub struct Bus {
 }
 
 impl Bus {
-    pub fn new<CB: 'static + FnMut(u8) + Send + Sync>(mem_size: usize, tx_callback: CB) -> Bus {
+    pub fn new(mem_size: usize) -> Bus {
         Bus {
             rom: Mem::new(0, 0x20000, true),
-            duart: Duart::new(tx_callback),
+            duart: Duart::new(),
             scc: Mem::new(0x300000, 0x100, false),
             mouse: Mouse::new(),
             vid: Mem::new(0x500000, 0x2, false),
@@ -176,10 +176,6 @@ impl Bus {
         self.duart.get_interrupt()
     }
 
-    pub fn keyboard(&mut self, keycode: u8) {
-        self.duart.handle_keyboard(keycode);
-    }
-
     pub fn mouse_move(&mut self, x: u16, y: u16) {
         self.mouse.x = x;
         self.mouse.y = y;
@@ -193,8 +189,16 @@ impl Bus {
         self.duart.mouse_up(button);
     }
 
+    pub fn tx_poll(&mut self) -> Option<u8> {
+        self.duart.tx_poll()
+    }
+
     pub fn rx_char(&mut self, char: u8) -> Result<(), DuartError> {
         self.duart.rx_char(char)
+    }
+
+    pub fn rx_keyboard(&mut self, keycode: u8) -> Result<(), DuartError> {
+        self.duart.rx_keyboard(keycode)
     }
 
     pub fn rx_ready(&self) -> bool {
@@ -206,11 +210,9 @@ impl Bus {
 mod tests {
     use super::*;
 
-    fn tx_callback(_char: u8) {}
-
     #[test]
     fn should_fail_on_alignment_errors() {
-        let mut bus: Bus = Bus::new(0x10000, tx_callback);
+        let mut bus: Bus = Bus::new(0x10000);
 
         assert!(bus.write_byte(0x700000, 0x1f).is_ok());
         assert!(bus.write_half(0x700000, 0x1f1f).is_ok());

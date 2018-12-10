@@ -2104,8 +2104,6 @@ mod tests {
 
     const BASE: usize = 0x700000;
 
-    fn tx_callback(_char: u8) {}
-
     /// Helper function to set up and prepare a cpu and bus
     /// with a supplied program.
     fn do_with_program<F>(program: &[u8], test: F)
@@ -2113,7 +2111,7 @@ mod tests {
         F: Fn(&mut Cpu, &mut Bus),
     {
         let mut cpu: Cpu = Cpu::new();
-        let mut bus: Bus = Bus::new(0x10000, tx_callback);
+        let mut bus: Bus = Bus::new(0x10000);
 
         bus.load(BASE, &program).unwrap();
         cpu.r[R_PC] = BASE as u32;
