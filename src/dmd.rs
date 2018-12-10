@@ -143,6 +143,13 @@ impl Dmd {
     pub fn mouse_up(&mut self, button: u8) {
         self.bus.mouse_up(button);
     }
+
+    ///
+    /// Return the current state of the DUART's Output Port
+    ///
+    pub fn duart_output(&self) -> u8 {
+        self.bus.duart_output()
+    }
 }
 
 #[cfg(test)]

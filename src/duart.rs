@@ -49,6 +49,8 @@ const CSRB: u8 = 0x27;
 const CRB: u8 = 0x2b;
 const THRB: u8 = 0x2f;
 const IP_OPCR: u8 = 0x37;
+const OPBITS_SET: u8 = 0x3b;
+const OPBITS_RESET: u8 = 0x3f;
 
 
 //
@@ -110,6 +112,7 @@ pub struct Duart {
     acr: u8,
     ipcr: u8,
     inprt: u8,
+    outprt: u8,
     istat: u8,
     imr: u8,
     ivec: u8,
@@ -151,6 +154,7 @@ impl Duart {
             acr: 0,
             ipcr: 0x40,
             inprt: 0xb,
+            outprt: 0,
             istat: 0,
             imr: 0,
             ivec: 0,
@@ -210,6 +214,11 @@ impl Duart {
         } else {
             self.inprt &= !0x04;
         }
+    }
+
+    pub fn output_port(&self) -> u8 {
+        // The output port always returns a complement of the bits
+        !self.outprt
     }
 
     pub fn tx_poll(&mut self) -> Option<u8> {
@@ -509,6 +518,12 @@ impl Device for Duart {
             }
             IP_OPCR => {
                 // Not implemented
+            }
+            OPBITS_SET => {
+                self.outprt |= val;
+            }
+            OPBITS_RESET => {
+                self.outprt &= !val;
             }
             _ => {}
         };

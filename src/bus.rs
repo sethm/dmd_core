@@ -204,6 +204,10 @@ impl Bus {
     pub fn rx_ready(&self) -> bool {
         self.duart.rx_ready()
     }
+
+    pub fn duart_output(&self) -> u8 {
+        self.duart.output_port()
+    }
 }
 
 #[cfg(test)]

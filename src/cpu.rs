@@ -1622,7 +1622,6 @@ impl Cpu {
                 self.set_v_flag_op(result, 2);
             }
             _ => {
-                trace!("Unhandled opcode: {:?}", self.ir);
                 return Err(CpuError::Exception(CpuException::IllegalOpcode));
             }
         };

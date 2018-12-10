@@ -1,9 +1,19 @@
 [package]
 name = "dmd_core"
-version = "0.1.0"
+description = "AT&T / Teletype DMD 5620 Terminal Emulator - Core Library"
+version = "0.2.0"
 authors = ["Seth Morabito <web@loomcom.com>"]
+homepage = "https://github.com/sethm/dmd_core"
+repository = "https://github.com/sethm/dmd_core"
+readme = "README.md"
 edition = "2018"
+license = "MIT"
+categories = ["simulation"]
 
 [dependencies]
 lazy_static = "^1.2.0"
-log = "0.4"
+
+[badges]
+travic-ci = { repository = "https://github.com/sethm/dmd_core", branch = "master" }
+
+maintenance = { status = "actively-developed" }
