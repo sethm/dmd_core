@@ -6,6 +6,8 @@ use crate::err::DuartError;
 use std::fmt::Debug;
 use std::ops::Range;
 
+const NVRAM_SIZE: usize = 8192;
+
 /// Access Status Code
 pub enum AccessCode {
     MoveTranslated,
@@ -207,6 +209,22 @@ impl Bus {
 
     pub fn duart_output(&self) -> u8 {
         self.duart.output_port()
+    }
+
+    pub fn get_nvram(&self) -> [u8; NVRAM_SIZE] {
+        let mut contents: [u8; NVRAM_SIZE] = [0u8; NVRAM_SIZE];
+
+        for i in 0..NVRAM_SIZE {
+            contents[i] = self.bbram[i];
+        }
+
+        contents
+    }
+
+    pub fn set_nvram(&mut self, nvram: &[u8; NVRAM_SIZE]) {
+        for (i, b) in nvram.into_iter().enumerate() {
+            self.bbram[i] = *b;
+        }
     }
 }
 

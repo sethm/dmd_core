@@ -4,7 +4,7 @@ use crate::err::BusError;
 use std::fmt::Debug;
 use std::fmt::Error;
 use std::fmt::Formatter;
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 use std::vec::Vec;
 use std::ops::Range;
 
@@ -165,6 +165,12 @@ impl Index<usize> for Mem {
 
     fn index(&self, idx: usize) -> &u8 {
         &self.ram[idx]
+    }
+}
+
+impl IndexMut<usize> for Mem {
+    fn index_mut<'a>(&'a mut self, idx: usize) -> &'a mut u8 {
+        &mut self.ram[idx]
     }
 }
 

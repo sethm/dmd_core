@@ -150,6 +150,20 @@ impl Dmd {
     pub fn duart_output(&self) -> u8 {
         self.bus.duart_output()
     }
+
+    ///
+    /// Load NVRAM into the emulator
+    ///
+    pub fn set_nvram(&mut self, nvram: &[u8; 8192]) {
+        self.bus.set_nvram(nvram);
+    }
+
+    ///
+    /// Get NVRAM from the emulator
+    ///
+    pub fn get_nvram(&self) -> [u8; 8192] {
+        self.bus.get_nvram()
+    }
 }
 
 #[cfg(test)]
