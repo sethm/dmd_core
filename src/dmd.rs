@@ -175,4 +175,28 @@ mod tests {
         let mut dmd = Dmd::new();
         dmd.reset().unwrap();
     }
+
+    #[test]
+    fn loads_and_reads_nvram() {
+        let mut dmd = Dmd::new();
+
+        let mut to_load: [u8; 8192] = [0; 8192];
+        to_load[0] = 0x5a;
+        to_load[0xfff] = 0xa5;
+        to_load[0x1fff] = 0xff;
+
+        let old_nvram = dmd.get_nvram();
+
+        assert_eq!(0, old_nvram[0]);
+        assert_eq!(0, old_nvram[0xfff]);
+        assert_eq!(0, old_nvram[0x1fff]);
+
+        dmd.set_nvram(&to_load);
+
+        let new_nvram = dmd.get_nvram();
+
+        assert_eq!(0x5a, new_nvram[0]);
+        assert_eq!(0xa5, new_nvram[0xfff]);
+        assert_eq!(0xff, new_nvram[0x1fff]);
+    }
 }
