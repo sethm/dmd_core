@@ -1,7 +1,6 @@
 use crate::bus::AccessCode;
 use crate::bus::Device;
 use crate::err::BusError;
-use crate::err::DuartError;
 
 use std::fmt::Debug;
 use std::fmt::Error;
@@ -100,8 +99,8 @@ struct Port {
     rx_data: u8,
     tx_data: u8,
     mode_ptr: usize,
-    rx_pending: bool,
-    tx_pending: bool,
+    rx_queue: VecDeque<u8>,
+    tx_queue: VecDeque<u8>,
     char_delay: Duration,
     next_rx: Instant,
     next_tx: Instant,
@@ -117,7 +116,6 @@ pub struct Duart {
     imr: u8,
     ivec: u8,
     last_vblank: Instant,
-    tx_queue: VecDeque<u8>,
 }
 
 impl Duart {
@@ -131,8 +129,8 @@ impl Duart {
                     rx_data: 0,
                     tx_data: 0,
                     mode_ptr: 0,
-                    rx_pending: false,
-                    tx_pending: false,
+                    rx_queue: VecDeque::new(),
+                    tx_queue: VecDeque::new(),
                     char_delay: Duration::new(0, 1_000_000),
                     next_rx: Instant::now(),
                     next_tx: Instant::now(),
@@ -144,8 +142,8 @@ impl Duart {
                     rx_data: 0,
                     tx_data: 0,
                     mode_ptr: 0,
-                    rx_pending: false,
-                    tx_pending: false,
+                    rx_queue: VecDeque::new(),
+                    tx_queue: VecDeque::new(),
                     char_delay: Duration::new(0, 1_000_000),
                     next_rx: Instant::now(),
                     next_tx: Instant::now(),
@@ -159,7 +157,6 @@ impl Duart {
             imr: 0,
             ivec: 0,
             last_vblank: Instant::now(),
-            tx_queue: VecDeque::new(),
         }
     }
 
@@ -180,18 +177,51 @@ impl Duart {
         }
     }
 
+    fn handle_rx(&mut self, port: usize) {
+        let mut ctx = &mut self.ports[port];
+
+        let (istat, ivec) = match port {
+            0 => (ISTS_RAI, RX_INT),
+            _ => (ISTS_RBI, KEYBOARD_INT),
+        };
+
+        if !ctx.rx_queue.is_empty() && Instant::now() >= ctx.next_rx {
+            match ctx.rx_queue.pop_back() {
+                Some(c) => {
+                    if ctx.conf & CNF_ERX != 0 {
+                        ctx.rx_data = c;
+                        ctx.stat |= STS_RXR;
+                        self.istat |= istat;
+                        self.ivec |= ivec;
+                    } else {
+                        ctx.stat |= STS_OER;
+                    }
+                },
+                None => {
+                    // This is really unexpected! We just asserted
+                    // that the queue was not empty, so this should
+                    // really never happen.
+                }
+            }
+
+            if !ctx.rx_queue.is_empty() {
+                ctx.next_rx = Instant::now() + ctx.char_delay;
+            }
+        }
+    }
+
     pub fn service(&mut self) {
         let mut ctx = &mut self.ports[PORT_0];
 
-        if ctx.tx_pending && Instant::now() >= ctx.next_tx {
-            // Finish our transmit.
+        // Deal with RS-232 Transmit
+        if (ctx.conf & CNF_ETX) != 0 &&
+            (ctx.stat & STS_TXR) == 0 &&
+            (ctx.stat & STS_TXE) == 0 && Instant::now() >= ctx.next_tx {
             let c = ctx.tx_data;
-            ctx.conf |= CNF_ETX;
             ctx.stat |= STS_TXR;
             ctx.stat |= STS_TXE;
             self.istat |= ISTS_TAI;
             self.ivec |= TX_INT;
-            ctx.tx_pending = false;
             if (ctx.mode[1] >> 6) & 3 == 0x2 {
                 // Loopback Mode.
                 ctx.rx_data = c;
@@ -199,9 +229,17 @@ impl Duart {
                 self.istat |= ISTS_RAI;
                 self.ivec |= RX_INT;
             } else {
-                self.tx_queue.push_front(c);
+                ctx.tx_queue.push_front(c);
             }
+
+            // ctx.next_tx = Instant::now() + ctx.char_delay;
         }
+
+        // Deal with RS-232 Receive
+        self.handle_rx(PORT_0);
+
+        // Deal with Keyboard Receive
+        self.handle_rx(PORT_1);
     }
 
     pub fn vertical_blank(&mut self) {
@@ -222,7 +260,7 @@ impl Duart {
     }
 
     pub fn tx_poll(&mut self) -> Option<u8> {
-        self.tx_queue.pop_back()
+        self.ports[PORT_0].tx_queue.pop_back()
     }
 
     pub fn mouse_down(&mut self, button: u8) {
@@ -266,60 +304,24 @@ impl Duart {
         }
     }
 
-    pub fn rx_ready(&self) -> bool {
-        let ctx = &self.ports[PORT_0];
-
-        return (ctx.stat & STS_RXR) != 0;
-    }
-
-    pub fn rx_keyboard(&mut self, c: u8) -> Result<(), DuartError> {
+    pub fn rx_keyboard(&mut self, c: u8) {
         let mut ctx = &mut self.ports[PORT_1];
 
-        if ctx.rx_pending {
-            if Instant::now() > ctx.next_rx {
-                if ctx.conf & CNF_ERX != 0 {
-                    ctx.rx_pending = false;
-                    ctx.rx_data = c;
-                    ctx.stat |= STS_RXR;
-                    self.istat |= ISTS_RBI;
-                    self.ivec |= KEYBOARD_INT;
-                } else {
-                    ctx.stat |= STS_OER;
-                }
-                Ok(())
-            } else {
-                Err(DuartError::ReceiverNotReady)
-            }
-        } else {
+        if ctx.rx_queue.is_empty() {
             ctx.next_rx = Instant::now() + ctx.char_delay;
-            ctx.rx_pending = true;
-            Err(DuartError::ReceiverNotReady)
         }
+
+        ctx.rx_queue.push_front(c);
     }
 
-    pub fn rx_char(&mut self, c: u8) -> Result<(), DuartError> {
+    pub fn rx_char(&mut self, c: u8) {
         let mut ctx = &mut self.ports[PORT_0];
 
-        if ctx.rx_pending {
-            if Instant::now() > ctx.next_rx {
-                if ctx.conf & CNF_ERX != 0 {
-                    ctx.rx_pending = false;
-                    ctx.rx_data = c;
-                    ctx.stat |= STS_RXR;
-                    self.istat |= ISTS_RAI;
-                    self.ivec |= RX_INT;
-                } else {
-                    ctx.stat |= STS_OER;
-                }
-                Ok(())
-            } else {
-                Err(DuartError::ReceiverNotReady)
-            }
-        } else {
+        if ctx.rx_queue.is_empty() {
             ctx.next_rx = Instant::now() + ctx.char_delay;
-            ctx.rx_pending = true;
-            Err(DuartError::ReceiverNotReady)
         }
+
+        ctx.rx_queue.push_front(c);
     }
 
     pub fn handle_command(&mut self, cmd: u8, port: usize) {
@@ -484,12 +486,10 @@ impl Device for Duart {
             THRA => {
                 let mut ctx = &mut self.ports[PORT_0];
                 ctx.tx_data = val;
-                // Update state. Since we're transmitting,
-                // the transmitter buffer is not empty.
-                // The actual transmit will happen in the 'service'
-                // function.
+                // Update state. Since we're transmitting, the
+                // transmitter buffer is not empty.  The actual
+                // transmit will happen in the 'service' function.
                 ctx.next_tx = Instant::now() + ctx.char_delay;
-                ctx.tx_pending = true;
                 ctx.stat &= !(STS_TXE | STS_TXR);
                 self.ivec &= !TX_INT;
                 self.istat &= !ISTS_TAI;

@@ -4,7 +4,6 @@ use crate::err::BusError;
 use crate::err::CpuError;
 use crate::rom_hi::HI_ROM;
 use crate::rom_lo::LO_ROM;
-use crate::err::DuartError;
 
 pub struct Dmd {
     cpu: Cpu,
@@ -106,22 +105,15 @@ impl Dmd {
     ///
     /// Receive a character from the host to the terminal.
     ///
-    pub fn rx_char(&mut self, character: u8) -> Result<(), DuartError> {
-        self.bus.rx_char(character)
+    pub fn rx_char(&mut self, character: u8) {
+        self.bus.rx_char(character);
     }
 
     ///
     /// Receive a character from the keyboard to the terminal.
     ///
-    pub fn rx_keyboard(&mut self, keycode: u8) -> Result<(), DuartError> {
-        self.bus.rx_keyboard(keycode)
-    }
-
-    ///
-    /// Check to see if the terminal is ready to receive a new character.
-    ///
-    pub fn rx_ready(&self) -> bool {
-        self.bus.rx_ready()
+    pub fn rx_keyboard(&mut self, keycode: u8) {
+        self.bus.rx_keyboard(keycode);
     }
 
     ///

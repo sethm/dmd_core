@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::fmt;
-use std::fmt::Formatter;
 
 #[derive(Debug)]
 pub enum CpuException {
@@ -128,35 +127,9 @@ impl From<CpuException> for CpuError {
         CpuError::Exception(err)
     }
 }
+
 impl From<BusError> for CpuError {
     fn from(err: BusError) -> CpuError {
         CpuError::Bus(err)
-    }
-}
-
-#[derive(Debug)]
-pub enum DuartError {
-    ReceiverNotReady
-}
-
-impl fmt::Display for DuartError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match *self {
-            DuartError::ReceiverNotReady => write!(f, "receiver not ready")
-        }
-    }
-}
-
-impl Error for DuartError {
-    fn description(&self) -> &str {
-        match *self {
-            DuartError::ReceiverNotReady => "Receiver not ready",
-        }
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        match *self {
-            DuartError::ReceiverNotReady => None
-        }
     }
 }

@@ -2,7 +2,6 @@ use crate::err::BusError;
 use crate::mem::Mem;
 use crate::duart::Duart;
 use crate::mouse::Mouse;
-use crate::err::DuartError;
 use std::fmt::Debug;
 use std::ops::Range;
 
@@ -195,16 +194,12 @@ impl Bus {
         self.duart.tx_poll()
     }
 
-    pub fn rx_char(&mut self, char: u8) -> Result<(), DuartError> {
-        self.duart.rx_char(char)
+    pub fn rx_char(&mut self, char: u8) {
+        self.duart.rx_char(char);
     }
 
-    pub fn rx_keyboard(&mut self, keycode: u8) -> Result<(), DuartError> {
-        self.duart.rx_keyboard(keycode)
-    }
-
-    pub fn rx_ready(&self) -> bool {
-        self.duart.rx_ready()
+    pub fn rx_keyboard(&mut self, keycode: u8) {
+        self.duart.rx_keyboard(keycode);
     }
 
     pub fn duart_output(&self) -> u8 {
