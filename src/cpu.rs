@@ -18,6 +18,9 @@ const F_C: u32 = 0x00040000;
 const F_V: u32 = 0x00080000;
 const F_Z: u32 = 0x00100000;
 const F_N: u32 = 0x00200000;
+const F_CD: u32 = 0x00800000;
+const F_QIE: u32 = 0x01000000;
+const F_CFD: u32 = 0x02000000;
 
 const O_ET: u32 = 0;
 const O_TM: u32 = 2;
@@ -48,7 +51,7 @@ const IPL_TABLE: [u32; 64] = [
 const WE32100_VERSION: u32 = 0x1a;
 
 pub enum ExceptionType {
-    ExternlMemory
+    ExternalMemory
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
@@ -1462,6 +1465,30 @@ impl Cpu {
                 self.r[R_FP] = b;
                 self.r[R_SP] = a;
             }
+            RETG => {
+                let mut new_psw = bus.read_word(self.r[R_SP] as usize - 4, AccessCode::AddressFetch)?;
+                let new_pc = bus.read_word(self.r[R_SP] as usize - 8, AccessCode::AddressFetch)?;
+
+                // TODO: Check for illegal level change
+
+                new_psw &= !(F_IPL | F_CFD | F_QIE | F_CD |
+                             F_R | F_ISC | F_TM | F_ET);
+
+                new_psw |= self.r[R_PSW] & F_IPL;
+                new_psw |= self.r[R_PSW] & F_CFD;
+                new_psw |= self.r[R_PSW] & F_QIE;
+                new_psw |= self.r[R_PSW] & F_CD;
+                new_psw |= self.r[R_PSW] & F_R;
+                new_psw |= 7 << O_ISC;
+                new_psw |= 3 << O_ET;
+
+                self.r[R_PSW] = new_psw;
+                self.r[R_PC] = new_pc;
+
+                self.r[R_SP] -= 8;
+
+                pc_increment = 0;
+            }
             RGEQ => {
                 if !self.n_flag() || self.z_flag() {
                     self.r[R_PC] = self.stack_pop(bus)?;
@@ -1635,10 +1662,10 @@ impl Cpu {
         Ok(pc_increment)
     }
 
-    fn gate(&mut self, bus: &mut Bus, index1: usize, index2: usize) -> Result<(), CpuException> {
-        let gate_l2 = self.read_w(index1, AccessCode::AddressFetch)? + index2;
+    fn gate(&mut self, bus: &mut Bus, index1: usize, index2: usize) -> Result<(), CpuError> {
+        let gate_l2 = bus.read_word(index1, AccessCode::AddressFetch)? as usize + index2;
 
-        let new_psw = self.read_w(gate_l2, AccessCode::AddressFetch)?;
+        let mut new_psw = bus.read_word(gate_l2, AccessCode::AddressFetch)?;
 
         // Clear state in the new PSw
         new_psw &= !(F_PM | F_IPL | F_R | F_ISC | F_TM | F_ET);
@@ -1654,15 +1681,15 @@ impl Cpu {
         new_psw |= 3 << O_ET;
 
         // Finally, set the new PC and PSW
-        self.r[R_PC] = bus.read_w(gate_l2 + 4, AccessCode::AddressFetch)?;
+        self.r[R_PC] = bus.read_word(gate_l2 + 4, AccessCode::AddressFetch)?;
         self.r[R_PSW] = new_psw;
 
         Ok(())
     }
 
-    fn on_exception(&mut self, bus: &mut Bus, exc: ExceptionType) -> Result<(), CpuException>) {
+    fn on_exception(&mut self, bus: &mut Bus, exc: ExceptionType) -> Result<(), CpuError> {
         let (et, isc) = match exc {
-            Exception::ExternalMemory => (3, 5)
+            ExceptionType::ExternalMemory => (3, 5)
         };
 
         // TODO: Don't trap integer overflow
@@ -1673,7 +1700,7 @@ impl Cpu {
 
         // Handle the exception
         match exc {
-            Exception::ExternalMemory => {
+            ExceptionType::ExternalMemory => {
                 // TODO: Check for stac-bounds exception here
 
                 // Push the address of the next instruction to the stack.
@@ -1684,9 +1711,9 @@ impl Cpu {
                 self.r[R_PSW] |= 3 << O_ISC;
 
                 // Push the PSW to the stack
-                bus.write_w(self.r[R_SP] as usize + 4, self.r[R_PSW])?;
+                bus.write_word(self.r[R_SP] as usize + 4, self.r[R_PSW])?;
 
-                self.gate(bus, 0usize, isc as usize << O_ISC)?;
+                self.gate(bus, 0usize, (isc as usize) << O_ISC)?;
 
                 // Finish stack push
                 self.r[R_SP] += 8;
@@ -1706,7 +1733,7 @@ impl Cpu {
             Err(CpuError::Bus(BusError::NoDevice(_)))
             | Err(CpuError::Bus(BusError::Read(_)))
             | Err(CpuError::Bus(BusError::Write(_))) => {
-                self.on_exception(bus, Exception::ExternalMemory)
+                self.on_exception(bus, ExceptionType::ExternalMemory).unwrap();
             }
             Err(CpuError::Exception(CpuException::IllegalOpcode)) => {}
             Err(CpuError::Exception(CpuException::InvalidDescriptor)) => {}
