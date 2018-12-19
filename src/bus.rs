@@ -57,7 +57,6 @@ pub trait Device: Send + Sync + Debug {
 pub struct Bus {
     rom: Mem,
     duart: Duart,
-    scc: Mem,      // TODO: Remove
     mouse: Mouse,
     vid: Mem,      // TODO: Figure out what device this really is
     bbram: Mem,    // TODO: change to BBRAM when implemented
@@ -69,7 +68,6 @@ impl Bus {
         Bus {
             rom: Mem::new(0, 0x20000, true),
             duart: Duart::new(),
-            scc: Mem::new(0x300000, 0x100, false),
             mouse: Mouse::new(),
             vid: Mem::new(0x500000, 0x2, false),
             bbram: Mem::new(0x600000, 0x2000, false),
@@ -84,10 +82,6 @@ impl Bus {
 
         if address >= 0x200000 && address < 0x200040 {
             return Ok(&mut self.duart);
-        }
-
-        if address >= 0x300000 && address < 0x300100 {
-            return Ok(&mut self.scc);
         }
 
         if address >= 0x400000 && address < 0x400004 {

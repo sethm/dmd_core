@@ -25,6 +25,17 @@ Note that there is no user interface: This is a back-end library only.
 It may be used as a component to build a fully-fledged emulator,
 however.
 
+## Changelog
+
+0.3.1: Added exception handling for memory errors, and a `run` function
+       to free-run the CPU for a given number of steps.
+
+0.3.0: Breaking change. Charater RX from RS-232 and keyboard are now
+       handled by internal queues, and no longer return `DuartError`
+       on failure.
+
+0.2.1: Initial release.
+
 ## Emulator Reference Implementation
 
 For a reference implementation emulator that uses this library,

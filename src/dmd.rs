@@ -88,6 +88,15 @@ impl Dmd {
     }
 
     ///
+    /// Free-run the CPU for a given number of steps.
+    ///
+    pub fn run(&mut self, count: usize) {
+        for _ in 0..count {
+            self.cpu.step(&mut self.bus);
+        }
+    }
+
+    ///
     /// Step the terminal's CPU one time, returning any error that may have occured.
     /// Useful for debugging.
     ///

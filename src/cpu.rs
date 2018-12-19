@@ -13,12 +13,14 @@ const F_I: u32 = 0x00000080;
 const F_R: u32 = 0x00000100;
 const F_PM: u32 = 0x00000600;
 const F_CM: u32 = 0x00001800;
+const F_IPL: u32 = 0x0001e000;
 const F_C: u32 = 0x00040000;
 const F_V: u32 = 0x00080000;
 const F_Z: u32 = 0x00100000;
 const F_N: u32 = 0x00200000;
 
 const O_ET: u32 = 0;
+const O_TM: u32 = 2;
 const O_ISC: u32 = 3;
 
 ///
@@ -44,6 +46,10 @@ const IPL_TABLE: [u32; 64] = [
 ];
 
 const WE32100_VERSION: u32 = 0x1a;
+
+pub enum ExceptionType {
+    ExternlMemory
+}
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum AddrMode {
@@ -1629,6 +1635,67 @@ impl Cpu {
         Ok(pc_increment)
     }
 
+    fn gate(&mut self, bus: &mut Bus, index1: usize, index2: usize) -> Result<(), CpuException> {
+        let gate_l2 = self.read_w(index1, AccessCode::AddressFetch)? + index2;
+
+        let new_psw = self.read_w(gate_l2, AccessCode::AddressFetch)?;
+
+        // Clear state in the new PSw
+        new_psw &= !(F_PM | F_IPL | F_R | F_ISC | F_TM | F_ET);
+
+        // Set new state
+        new_psw |= (self.r[R_PSW] & F_CM) >> 2; // PM (set from CM)
+        new_psw |= self.r[R_PSW] & F_IPL;
+        new_psw |= self.r[R_PSW] & F_R;
+
+        // Set new ISC, TM, and ET to 7, 1, 3 respectively
+        new_psw |= 7 << O_ISC;
+        new_psw |= 1 << O_TM;
+        new_psw |= 3 << O_ET;
+
+        // Finally, set the new PC and PSW
+        self.r[R_PC] = bus.read_w(gate_l2 + 4, AccessCode::AddressFetch)?;
+        self.r[R_PSW] = new_psw;
+
+        Ok(())
+    }
+
+    fn on_exception(&mut self, bus: &mut Bus, exc: ExceptionType) -> Result<(), CpuException>) {
+        let (et, isc) = match exc {
+            Exception::ExternalMemory => (3, 5)
+        };
+
+        // TODO: Don't trap integer overflow
+        self.r[R_PSW] &= !F_ET;
+        self.r[R_PSW] &= !F_ISC;
+        self.r[R_PSW] |= et;
+        self.r[R_PSW] |= isc << O_ISC;
+
+        // Handle the exception
+        match exc {
+            Exception::ExternalMemory => {
+                // TODO: Check for stac-bounds exception here
+
+                // Push the address of the next instruction to the stack.
+                bus.write_word(self.r[R_SP] as usize, self.r[R_PC])?;
+
+                // Write 0, 3 to the PSW ET and ISC fields
+                self.r[R_PSW] &= !(F_ET | F_ISC);
+                self.r[R_PSW] |= 3 << O_ISC;
+
+                // Push the PSW to the stack
+                bus.write_w(self.r[R_SP] as usize + 4, self.r[R_PSW])?;
+
+                self.gate(bus, 0usize, isc as usize << O_ISC)?;
+
+                // Finish stack push
+                self.r[R_SP] += 8;
+            }
+        };
+
+        Ok(())
+    }
+
     /// Step the CPU by one instruction.
     pub fn step(&mut self, bus: &mut Bus) {
         // TODO: On CPU Exception or Bus Error, handle each error with the appropriate exception handler routine
@@ -1638,7 +1705,9 @@ impl Cpu {
             Err(CpuError::Bus(BusError::Permission)) => {}
             Err(CpuError::Bus(BusError::NoDevice(_)))
             | Err(CpuError::Bus(BusError::Read(_)))
-            | Err(CpuError::Bus(BusError::Write(_))) => {}
+            | Err(CpuError::Bus(BusError::Write(_))) => {
+                self.on_exception(bus, Exception::ExternalMemory)
+            }
             Err(CpuError::Exception(CpuException::IllegalOpcode)) => {}
             Err(CpuError::Exception(CpuException::InvalidDescriptor)) => {}
             Err(CpuError::Exception(CpuException::PrivilegedOpcode)) => {}
