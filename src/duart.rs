@@ -81,6 +81,7 @@ const CMD_DTX: u8 = 0x08;
 //
 const ISTS_TAI: u8 = 0x01;
 const ISTS_RAI: u8 = 0x02;
+const ISTS_TBI: u8 = 0x10;
 const ISTS_RBI: u8 = 0x20;
 const ISTS_IPC: u8 = 0x80;
 
@@ -210,33 +211,48 @@ impl Duart {
         }
     }
 
-    pub fn service(&mut self) {
-        let mut ctx = &mut self.ports[PORT_0];
+    fn handle_tx(&mut self, port: usize) {
+        let mut ctx = &mut self.ports[port];
 
-        // Deal with RS-232 Transmit
+        let (tx_istat, rx_istat) = match port {
+            0 => (ISTS_TAI, ISTS_RAI),
+            _ => (ISTS_TBI, ISTS_RBI),
+        };
+
         if (ctx.conf & CNF_ETX) != 0 &&
             (ctx.stat & STS_TXR) == 0 &&
-            (ctx.stat & STS_TXE) == 0 && Instant::now() >= ctx.next_tx {
+            (ctx.stat & STS_TXE) == 0 && Instant::now() >= ctx.next_tx
+        {
             let c = ctx.tx_data;
             ctx.stat |= STS_TXR;
             ctx.stat |= STS_TXE;
-            self.istat |= ISTS_TAI;
-            self.ivec |= TX_INT;
+            self.istat |= tx_istat;
+            // Only RS232 transmit generates an interrupt.
+            if port == 0 {
+                self.ivec |= TX_INT;
+            }
             if (ctx.mode[1] >> 6) & 3 == 0x2 {
                 // Loopback Mode.
                 ctx.rx_data = c;
                 ctx.stat |= STS_RXR;
-                self.istat |= ISTS_RAI;
+                self.istat |= rx_istat;
                 self.ivec |= RX_INT;
             } else {
                 ctx.tx_queue.push_front(c);
             }
-
-            // ctx.next_tx = Instant::now() + ctx.char_delay;
         }
+    }
+
+    pub fn service(&mut self) {
+        // Deal with RS-232 Transmit
+        self.handle_tx(PORT_0);
 
         // Deal with RS-232 Receive
         self.handle_rx(PORT_0);
+
+        // Deal with Keyboard Transmit
+        // (note: This is used only for keyboard beeps!)
+        self.handle_tx(PORT_1);
 
         // Deal with Keyboard Receive
         self.handle_rx(PORT_1);
@@ -259,8 +275,12 @@ impl Duart {
         !self.outprt
     }
 
-    pub fn tx_poll(&mut self) -> Option<u8> {
+    pub fn rs232_tx_poll(&mut self) -> Option<u8> {
         self.ports[PORT_0].tx_queue.pop_back()
+    }
+
+    pub fn kb_tx_poll(&mut self) -> Option<u8> {
+        self.ports[PORT_1].tx_queue.pop_back()
     }
 
     pub fn mouse_down(&mut self, button: u8) {
@@ -491,8 +511,8 @@ impl Device for Duart {
                 // transmit will happen in the 'service' function.
                 ctx.next_tx = Instant::now() + ctx.char_delay;
                 ctx.stat &= !(STS_TXE | STS_TXR);
-                self.ivec &= !TX_INT;
                 self.istat &= !ISTS_TAI;
+                self.ivec &= !TX_INT;
             }
             IPCR_ACR => {
                 self.acr = val;
@@ -509,11 +529,21 @@ impl Device for Duart {
                 self.handle_command(val, PORT_1);
             }
             THRB => {
+                // TODO: When OP3 is low, do not send data to
+                // the keyboard! It's meant for the printer.
+
+                // Keyboard transmit requires special handling,
+                // because the only things the terminal transmits to
+                // the keyboard are status requests, or keyboard beep
+                // requests. We ignore status requests, and only
+                // put beep requests into the queue.
                 let mut ctx = &mut self.ports[PORT_1];
-                ctx.tx_data = val;
-                // Special case for status requests from the keyboard
-                if val == 0x02 {
-                    ctx.stat = STS_RXR | STS_PER;
+
+                if (val & 0x08) != 0 {
+                    ctx.tx_data = val;
+                    ctx.next_tx = Instant::now() + ctx.char_delay;
+                    ctx.stat &= !(STS_TXE | STS_TXR);
+                    self.istat &= !ISTS_TBI;
                 }
             }
             IP_OPCR => {

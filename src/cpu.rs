@@ -1315,7 +1315,7 @@ impl Cpu {
             }
             MNEGW | MNEGH | MNEGB => {
                 let a = self.read_op(bus, 0)?;
-                let result = !a + 1;
+                let result = (!a).wrapping_add(1);
                 self.write_op(bus, 1, result)?;
                 self.set_nz_flags(result, 1);
                 self.set_c_flag(false);

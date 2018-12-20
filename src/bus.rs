@@ -184,8 +184,12 @@ impl Bus {
         self.duart.mouse_up(button);
     }
 
-    pub fn tx_poll(&mut self) -> Option<u8> {
-        self.duart.tx_poll()
+    pub fn rs232_tx_poll(&mut self) -> Option<u8> {
+        self.duart.rs232_tx_poll()
+    }
+
+    pub fn kb_tx_poll(&mut self) -> Option<u8> {
+        self.duart.kb_tx_poll()
     }
 
     pub fn rx_char(&mut self, char: u8) {

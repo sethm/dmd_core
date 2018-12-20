@@ -27,6 +27,10 @@ however.
 
 ## Changelog
 
+0.4.0: Breaking change. TX to the keyboard from the terminal is
+       now supported, so that clients can use it to detect when
+       a bell (^G) request has been sent.
+
 0.3.1: Added exception handling for memory errors, and a `run` function
        to free-run the CPU for a given number of steps.
 

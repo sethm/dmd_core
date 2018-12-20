@@ -107,8 +107,15 @@ impl Dmd {
     ///
     /// Poll for a character to transmit from the terminal to the host.
     ///
-    pub fn tx_poll(&mut self) -> Option<u8> {
-        self.bus.tx_poll()
+    pub fn rs232_tx_poll(&mut self) -> Option<u8> {
+        self.bus.rs232_tx_poll()
+    }
+
+    ///
+    /// Poll for a character to transmit from the terminal to the keyboard.
+    ///
+    pub fn kb_tx_poll(&mut self) -> Option<u8> {
+        self.bus.kb_tx_poll()
     }
 
     ///
