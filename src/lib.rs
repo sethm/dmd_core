@@ -11,3 +11,4 @@ pub mod rom_lo;
 
 #[macro_use]
 extern crate lazy_static;
+extern crate libc;

@@ -27,6 +27,10 @@ however.
 
 ## Changelog
 
+0.5.0: Non-breaking but major change. `dmd_core` now presents a
+       C compatible API to make interacting with C and C++ code
+       easier, without needed to write a full stub library.
+
 0.4.0: Breaking change. TX to the keyboard from the terminal is
        now supported, so that clients can use it to detect when
        a bell (^G) request has been sent.
