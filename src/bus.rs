@@ -63,40 +63,53 @@ pub struct Bus {
     ram: Mem,
 }
 
+const ROM_START: usize = 0;
+const ROM_SIZE: usize = 0x2_0000;
+const DUART_START: usize = 0x20_0000;
+const DUART_SIZE: usize = 0x40;
+const MOUSE_START: usize = 0x40_0000;
+const MOUSE_SIZE: usize = 4;
+const VID_START: usize = 0x50_0000;
+const VID_SIZE: usize = 2;
+const BBRAM_START: usize = 0x60_0000;
+const BBRAM_SIZE: usize = 0x2000;
+const RAM_START: usize = 0x70_0000;
+const RAM_SIZE: usize = 0x10_0000;
+
 impl Bus {
     pub fn new(mem_size: usize) -> Bus {
         Bus {
-            rom: Mem::new(0, 0x20000, true),
+            rom: Mem::new(ROM_START, ROM_SIZE, true),
             duart: Duart::new(),
             mouse: Mouse::new(),
-            vid: Mem::new(0x500000, 0x2, false),
-            bbram: Mem::new(0x600000, 0x2000, false),
-            ram: Mem::new(0x700000, mem_size, false),
+            vid: Mem::new(0x50_0000, 0x2, false),
+            bbram: Mem::new(0x60_0000, 0x2000, false),
+            ram: Mem::new(0x70_0000, mem_size, false),
         }
     }
 
     fn get_device(&mut self, address: usize) -> Result<&mut Device, BusError> {
-        if address < 0x20000 {
+        if address < ROM_SIZE {
             return Ok(&mut self.rom);
         }
 
-        if address >= 0x200000 && address < 0x200040 {
+        if address >= DUART_START && address < DUART_START + DUART_SIZE {
             return Ok(&mut self.duart);
         }
 
-        if address >= 0x400000 && address < 0x400004 {
+        if address >= MOUSE_START && address < MOUSE_START + MOUSE_SIZE {
             return Ok(&mut self.mouse);
         }
 
-        if address >= 0x500000 && address < 0x500002 {
+        if address >= VID_START && address < VID_START + VID_SIZE {
             return Ok(&mut self.vid);
         }
 
-        if address >= 0x600000 && address < 0x602000 {
+        if address >= BBRAM_START && address < BBRAM_START + BBRAM_SIZE {
             return Ok(&mut self.bbram);
         }
 
-        if address >= 0x700000 && address < 0x800000 {
+        if address >= RAM_START && address < RAM_START + RAM_SIZE {
             return Ok(&mut self.ram);
         }
 
@@ -124,17 +137,17 @@ impl Bus {
     pub fn read_op_half(&mut self, address: usize) -> Result<u16, BusError> {
         let m = self.get_device(address)?;
 
-        Ok((m.read_byte(address, AccessCode::OperandFetch)? as u16)
-            | (m.read_byte(address + 1, AccessCode::OperandFetch)? as u16).wrapping_shl(8))
+        Ok(u16::from(m.read_byte(address, AccessCode::OperandFetch)?)
+            | u16::from(m.read_byte(address + 1, AccessCode::OperandFetch)?).wrapping_shl(8))
     }
 
     pub fn read_op_word(&mut self, address: usize) -> Result<u32, BusError> {
         let m = self.get_device(address)?;
 
-        Ok((m.read_byte(address, AccessCode::OperandFetch)? as u32)
-            | (m.read_byte(address + 1, AccessCode::OperandFetch)? as u32).wrapping_shl(8)
-            | (m.read_byte(address + 2, AccessCode::OperandFetch)? as u32).wrapping_shl(16)
-            | (m.read_byte(address + 3, AccessCode::OperandFetch)? as u32).wrapping_shl(24))
+        Ok(u32::from(m.read_byte(address, AccessCode::OperandFetch)?)
+            | u32::from(m.read_byte(address + 1, AccessCode::OperandFetch)?).wrapping_shl(8)
+            | u32::from(m.read_byte(address + 2, AccessCode::OperandFetch)?).wrapping_shl(16)
+            | u32::from(m.read_byte(address + 3, AccessCode::OperandFetch)?).wrapping_shl(24))
     }
 
     pub fn write_byte(&mut self, address: usize, val: u8) -> Result<(), BusError> {
@@ -204,14 +217,8 @@ impl Bus {
         self.duart.output_port()
     }
 
-    pub fn get_nvram(&self) -> [u8; NVRAM_SIZE] {
-        let mut contents: [u8; NVRAM_SIZE] = [0u8; NVRAM_SIZE];
-
-        for i in 0..NVRAM_SIZE {
-            contents[i] = self.bbram[i];
-        }
-
-        contents
+    pub fn get_nvram(&self) -> Result<&[u8], BusError> {
+        self.bbram.as_slice(0..NVRAM_SIZE)
     }
 
     pub fn set_nvram(&mut self, nvram: &[u8; NVRAM_SIZE]) {
@@ -229,14 +236,14 @@ mod tests {
     fn should_fail_on_alignment_errors() {
         let mut bus: Bus = Bus::new(0x10000);
 
-        assert!(bus.write_byte(0x700000, 0x1f).is_ok());
-        assert!(bus.write_half(0x700000, 0x1f1f).is_ok());
-        assert!(bus.write_word(0x700000, 0x1f1f1f1f).is_ok());
-        assert!(bus.write_half(0x700001, 0x1f1f).is_err());
-        assert!(bus.write_half(0x700002, 0x1f1f).is_ok());
-        assert!(bus.write_word(0x700001, 0x1f1f1f1f).is_err());
-        assert!(bus.write_word(0x700002, 0x1f1f1f1f).is_err());
-        assert!(bus.write_word(0x700003, 0x1f1f1f1f).is_err());
-        assert!(bus.write_word(0x700004, 0x1f1f1f1f).is_ok());
+        assert!(bus.write_byte(0x70_0000, 0x1f).is_ok());
+        assert!(bus.write_half(0x70_0000, 0x1f1f).is_ok());
+        assert!(bus.write_word(0x70_0000, 0x1f1f_1f1f).is_ok());
+        assert!(bus.write_half(0x70_0001, 0x1f1f).is_err());
+        assert!(bus.write_half(0x70_0002, 0x1f1f).is_ok());
+        assert!(bus.write_word(0x70_0001, 0x1f1f_1f1f).is_err());
+        assert!(bus.write_word(0x70_0002, 0x1f1f_1f1f).is_err());
+        assert!(bus.write_word(0x70_0003, 0x1f1f_1f1f).is_err());
+        assert!(bus.write_word(0x70_0004, 0x1f1f_1f1f).is_ok());
     }
 }

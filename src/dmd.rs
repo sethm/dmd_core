@@ -22,10 +22,16 @@ pub struct Dmd {
     bus: Bus,
 }
 
+impl Default for Dmd {
+    fn default() -> Self {
+        Dmd::new()
+    }
+}
+
 impl Dmd {
     pub fn new() -> Dmd {
         let cpu = Cpu::new();
-        let bus = Bus::new(0x100000);
+        let bus = Bus::new(0x10_0000);
         Dmd {
             cpu,
             bus,
@@ -113,7 +119,7 @@ impl Dmd {
         self.bus.set_nvram(nvram);
     }
 
-    pub fn get_nvram(&self) -> [u8; 8192] {
+    pub fn get_nvram(&self) -> Result<&[u8], BusError> {
         self.bus.get_nvram()
     }
 }
@@ -305,11 +311,12 @@ fn dmd_set_nvram(nvram: &[u8; 8192]) -> c_int {
 fn dmd_get_nvram(nvram: &mut [u8; 8192]) -> c_int {
     match DMD.lock() {
         Ok(dmd) => {
-            let buf = dmd.get_nvram();
-            for i in 0..8192 {
-                nvram[i] = buf[i];
+            if let Ok(slice) = dmd.get_nvram() {
+                nvram.copy_from_slice(slice);
+                SUCCESS
+            } else {
+                ERROR
             }
-            SUCCESS
         }
         Err(_) => ERROR
     }
@@ -334,7 +341,7 @@ mod tests {
         to_load[0xfff] = 0xa5;
         to_load[0x1fff] = 0xff;
 
-        let old_nvram = dmd.get_nvram();
+        let old_nvram = dmd.get_nvram().unwrap();
 
         assert_eq!(0, old_nvram[0]);
         assert_eq!(0, old_nvram[0xfff]);
@@ -342,7 +349,7 @@ mod tests {
 
         dmd.set_nvram(&to_load);
 
-        let new_nvram = dmd.get_nvram();
+        let new_nvram = dmd.get_nvram().unwrap();
 
         assert_eq!(0x5a, new_nvram[0]);
         assert_eq!(0xa5, new_nvram[0xfff]);

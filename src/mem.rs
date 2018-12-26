@@ -169,7 +169,7 @@ impl Index<usize> for Mem {
 }
 
 impl IndexMut<usize> for Mem {
-    fn index_mut<'a>(&'a mut self, idx: usize) -> &'a mut u8 {
+    fn index_mut(&'_ mut self, idx: usize) -> &'_ mut u8 {
         &mut self.ram[idx]
     }
 }
@@ -183,7 +183,7 @@ mod tests {
         let mut mem = Mem::new(0, 0x1000, true);
         assert!(mem.write_byte(0, 0x1f, AccessCode::Write).is_err());
         assert!(mem.write_half(0, 0x1f1f, AccessCode::Write).is_err());
-        assert!(mem.write_word(0, 0x1f1f1f1f, AccessCode::Write).is_err());
+        assert!(mem.write_word(0, 0x1f1f_1f1f, AccessCode::Write).is_err());
     }
 
     #[test]

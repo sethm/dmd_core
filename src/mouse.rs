@@ -3,8 +3,8 @@ use crate::bus::AccessCode;
 use crate::err::BusError;
 use std::ops::Range;
 
-const START_ADDRESS: usize = 0x400000;
-const END_ADDRESS: usize = 0x4000004;
+const START_ADDRESS: usize = 0x40_0000;
+const END_ADDRESS: usize = 0x40_0004;
 const ADDRESS_RANGE: Range<usize> = START_ADDRESS..END_ADDRESS;
 
 #[derive(Debug)]
@@ -19,6 +19,12 @@ impl Mouse {
             x: 0,
             y: 0,
         }
+    }
+}
+
+impl Default for Mouse {
+    fn default() -> Self {
+        Mouse::new()
     }
 }
 
