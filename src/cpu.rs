@@ -6,21 +6,21 @@ use std::collections::HashMap;
 ///
 /// PSW Flags and Offsets
 ///
-const F_ET: u32 = 0x0000_0003;
-const F_TM: u32 = 0x0000_0004;
-const F_ISC: u32 = 0x0000_0078;
-const F_I: u32 = 0x0000_0080;
-const F_R: u32 = 0x0000_0100;
-const F_PM: u32 = 0x0000_0600;
-const F_CM: u32 = 0x0000_1800;
-const F_IPL: u32 = 0x0001_e000;
-const F_C: u32 = 0x0004_0000;
-const F_V: u32 = 0x0008_0000;
-const F_Z: u32 = 0x0010_0000;
-const F_N: u32 = 0x0020_0000;
-const F_CD: u32 = 0x0080_0000;
-const F_QIE: u32 = 0x0100_0000;
-const F_CFD: u32 = 0x0200_0000;
+const F_ET: u32 = 0x00000003;
+const F_TM: u32 = 0x00000004;
+const F_ISC: u32 = 0x00000078;
+const F_I: u32 = 0x00000080;
+const F_R: u32 = 0x00000100;
+const F_PM: u32 = 0x00000600;
+const F_CM: u32 = 0x00001800;
+const F_IPL: u32 = 0x0001e000;
+const F_C: u32 = 0x00040000;
+const F_V: u32 = 0x00080000;
+const F_Z: u32 = 0x00100000;
+const F_N: u32 = 0x00200000;
+const F_CD: u32 = 0x00800000;
+const F_QIE: u32 = 0x01000000;
+const F_CFD: u32 = 0x02000000;
 
 const O_ET: u32 = 0;
 const O_TM: u32 = 2;
@@ -191,11 +191,11 @@ macro_rules! mn {
 }
 
 fn sign_extend_halfword(data: u16) -> u32 {
-    (i32::from(data as i16)) as u32
+    ((data as i16) as i32) as u32
 }
 
 fn sign_extend_byte(data: u8) -> u32 {
-    (i32::from(data as i8)) as u32
+    ((data as i8) as i32) as u32
 }
 
 fn add_offset(val: u32, offset: u32) -> u32 {
@@ -403,12 +403,6 @@ pub struct Cpu {
     ir: Instruction,
 }
 
-impl Default for Cpu {
-    fn default() -> Self {
-        Cpu::new()
-    }
-}
-
 impl Cpu {
     pub fn new() -> Cpu {
         Cpu {
@@ -548,8 +542,8 @@ impl Cpu {
                 match op.data_type() {
                     Data::Word | Data::UWord => self.r[r],
                     Data::Half => sign_extend_halfword(self.r[r] as u16),
-                    Data::UHalf => u32::from(self.r[r] as u16),
-                    Data::Byte => u32::from(self.r[r] as u8),
+                    Data::UHalf => (self.r[r] as u16) as u32,
+                    Data::Byte => (self.r[r] as u8) as u32,
                     Data::SByte => sign_extend_byte(self.r[r] as u8),
                     _ => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 }
@@ -563,8 +557,8 @@ impl Cpu {
                 match op.data_type() {
                     Data::UWord | Data::Word => bus.read_word(eff as usize, AccessCode::InstrFetch)?,
                     Data::Half => sign_extend_halfword(bus.read_half(eff as usize, AccessCode::InstrFetch)?),
-                    Data::UHalf => u32::from(bus.read_half(eff as usize, AccessCode::InstrFetch)?),
-                    Data::Byte => u32::from(bus.read_byte(eff as usize, AccessCode::InstrFetch)?),
+                    Data::UHalf => bus.read_half(eff as usize, AccessCode::InstrFetch)? as u32,
+                    Data::Byte => bus.read_byte(eff as usize, AccessCode::InstrFetch)? as u32,
                     Data::SByte => sign_extend_byte(bus.read_byte(eff as usize, AccessCode::InstrFetch)?),
                     _ => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
                 }
@@ -690,7 +684,7 @@ impl Cpu {
     }
 
     fn add(&mut self, bus: &mut Bus, a: u32, b: u32, dst: usize) -> Result<(), CpuError> {
-        let result: u64 = u64::from(a).wrapping_add(u64::from(b));
+        let result: u64 = (a as u64).wrapping_add(b as u64);
 
         self.write_op(bus, dst, result as u32)?;
 
@@ -700,8 +694,8 @@ impl Cpu {
 
         match data_type {
             Data::Word | Data::UWord => {
-                self.set_c_flag(result > 0xffff_ffff);
-                self.set_v_flag((((a ^ !b) & (a ^ result as u32)) & 0x8000_0000) != 0);
+                self.set_c_flag(result > 0xffffffff);
+                self.set_v_flag((((a ^ !b) & (a ^ result as u32)) & 0x80000000) != 0);
             }
             Data::Half | Data::UHalf => {
                 self.set_c_flag(result > 0xffff);
@@ -720,7 +714,7 @@ impl Cpu {
     }
 
     fn sub(&mut self, bus: &mut Bus, a: u32, b: u32, dst: usize) -> Result<(), CpuError> {
-        let result: u64 = u64::from(a).wrapping_sub(u64::from(b));
+        let result: u64 = (a as u64).wrapping_sub(b as u64);
 
         self.write_op(bus, dst, result as u32)?;
 
@@ -737,8 +731,8 @@ impl Cpu {
             Data::Half => (b as i16 / a as i16) as u32,
             Data::SByte => (b as i8 / a as i8) as u32,
             Data::UWord => b / a,
-            Data::UHalf => u32::from(b as u16 / a as u16),
-            Data::Byte => u32::from(b as u8 / a as u8),
+            Data::UHalf => (b as u16 / a as u16) as u32,
+            Data::Byte => (b as u8 / a as u8) as u32,
             _ => b / a,
         }
     }
@@ -749,15 +743,15 @@ impl Cpu {
             Data::Half => (b as i16 % a as i16) as u32,
             Data::SByte => (b as i8 % a as i8) as u32,
             Data::UWord => b % a,
-            Data::UHalf => u32::from(b as u16 % a as u16),
-            Data::Byte => u32::from(b as u8 % a as u8),
+            Data::UHalf => (b as u16 % a as u16) as u32,
+            Data::Byte => (b as u8 % a as u8) as u32,
             _ => b % a,
         }
     }
 
     // TODO: Remove unwraps
     fn on_interrupt(&mut self, bus: &mut Bus, vector: u8) {
-        let new_pcbp = bus.read_word((0x8c + (4 * u32::from(vector))) as usize, AccessCode::AddressFetch).unwrap();
+        let new_pcbp = bus.read_word((0x8c + (4 * (vector as u32))) as usize, AccessCode::AddressFetch).unwrap();
         self.irq_push(bus, self.r[R_PCBP]).unwrap();
 
         self.r[R_PSW] &= !(F_ISC | F_TM | F_ET);
@@ -773,30 +767,26 @@ impl Cpu {
         self.context_switch_3(bus).unwrap();
     }
 
-    // Note: This function has ridiculous cyclomatic complexity. Clippy (rightfully)
-    // warns about this fact, but I can't think of a better way to do instruction
-    // dispatch at the moment that wouldn't end up being more expensive. So, until
-    // that glorious day, I'll turn off clippy's
-    #[allow(clippy::cyclomatic_complexity)]
     fn dispatch(&mut self, bus: &mut Bus) -> Result<i32, CpuError> {
         self.steps += 1;
 
         // Update anything that needs updating.
         bus.service();
 
-        if let Some(interrupt) = bus.get_interrupts() {
-            let cpu_ipl = (self.r[R_PSW]) >> 13 & 0xf;
-            if cpu_ipl < IPL_TABLE[(interrupt & 0x3f) as usize] {
-                self.on_interrupt(bus, (!interrupt) & 0x3f);
+        let interrupt: Option<u8> = bus.get_interrupts();
+
+        match interrupt {
+            Some(val) => {
+                let cpu_ipl = (self.r[R_PSW]) >> 13 & 0xf;
+                if cpu_ipl < IPL_TABLE[(val & 0x3f) as usize] {
+                    self.on_interrupt(bus, (!val) & 0x3f);
+                }
             }
+            None => {}
         }
 
         self.decode_instruction(bus)?;
-        // pc_increment is an i32 because it may be negative (jumps
-        // and branches, etc.) Strictly speaking, the case from u8
-        // to i8 here isn't strictly necessary, since ir.bytes will
-        // never be negative. But, being idiomatic and all that...
-        let mut pc_increment: i32 = i32::from(self.ir.bytes as i8);
+        let mut pc_increment: i32 = self.ir.bytes as i32;
 
         match self.ir.opcode {
             NOP => {
@@ -821,7 +811,7 @@ impl Cpu {
             ALSW3 => {
                 let a = self.read_op(bus, 0)?;
                 let b = self.read_op(bus, 1)?;
-                let result = u64::from(b) << (a & 0x1f);
+                let result = (b as u64) << (a & 0x1f);
                 self.write_op(bus, 2, result as u32)?;
 
                 self.set_nz_flags(result as u32, 2);
@@ -1097,7 +1087,7 @@ impl Cpu {
                     return Err(CpuError::Exception(CpuException::IntegerZeroDivide));
                 }
 
-                if a == 0xffff_ffff && b == 0x8000_0000 {
+                if a == 0xffffffff && b == 0x80000000 {
                     self.set_v_flag(true);
                 }
 
@@ -1148,7 +1138,7 @@ impl Cpu {
                     return Err(CpuError::Exception(CpuException::IntegerZeroDivide));
                 }
 
-                if a == 0xffff_ffff && b == 0x8000_0000 {
+                if a == 0xffffffff && b == 0x80000000 {
                     self.set_v_flag(true);
                 }
 
@@ -1223,20 +1213,20 @@ impl Cpu {
                 let offset = self.read_op(bus, 1)? & 0x1f;
 
                 let mut mask = if width >= 32 {
-                    0xffff_ffff
+                    0xffffffff
                 } else {
                     (1 << width) - 1
                 };
 
-                mask <<= offset;
+                mask = mask << offset;
 
                 if width + offset > 32 {
-                    mask |= 1 << (((width + offset) - 32) - 1);
+                    mask |= 1 << ((width + offset) - 32) - 1;
                 }
 
                 let mut a = self.read_op(bus, 2)?;
                 a &= mask;
-                a >>= offset;
+                a = a >> offset;
 
                 self.write_op(bus, 3, a)?;
                 self.set_nz_flags(a, 3);
@@ -1252,7 +1242,7 @@ impl Cpu {
                 let offset = self.read_op(bus, 1)? & 0x1f;
 
                 let mask = if width >= 32 {
-                    0xffff_ffff
+                    0xffffffff
                 } else {
                     (1 << width) - 1
                 };
@@ -1279,7 +1269,7 @@ impl Cpu {
                 pc_increment = 0;
             }
             LLSW3 | LLSH3 | LLSB3 => {
-                let a: u64 = u64::from(self.read_op(bus, 1)?);
+                let a: u64 = self.read_op(bus, 1)? as u64;
                 let b = self.read_op(bus, 0)? & 0x1f;
 
                 let result = (a << b) as u32;
@@ -1296,8 +1286,8 @@ impl Cpu {
                     Data::Word => (a as i32 >> b as i32) as u32,
                     Data::UWord => a >> b,
                     Data::Half => (a as i16 >> b as i16) as u32,
-                    Data::UHalf => u32::from(a as u16 >> b as u16),
-                    Data::Byte => u32::from(a as u8 >> b as u8),
+                    Data::UHalf => (a as u16 >> b as u16) as u32,
+                    Data::Byte => (a as u8 >> b as u8) as u32,
                     Data::SByte => (a as i8 >> b as i8) as u32,
                     _ => 0,
                 };
@@ -1608,7 +1598,7 @@ impl Cpu {
                     stack_offset += 4;
                 }
 
-                self.r[R_SP] += 28;
+                self.r[R_SP] = self.r[R_SP] + 28;
                 self.r[R_FP] = self.r[R_SP];
             }
             SUBW2 | SUBH2 | SUBB2 => {
@@ -1697,7 +1687,7 @@ impl Cpu {
         Ok(())
     }
 
-    fn on_exception(&mut self, bus: &mut Bus, exc: &ExceptionType) -> Result<(), CpuError> {
+    fn on_exception(&mut self, bus: &mut Bus, exc: ExceptionType) -> Result<(), CpuError> {
         let (et, isc) = match exc {
             ExceptionType::ExternalMemory => (3, 5)
         };
@@ -1743,7 +1733,7 @@ impl Cpu {
             Err(CpuError::Bus(BusError::NoDevice(_)))
             | Err(CpuError::Bus(BusError::Read(_)))
             | Err(CpuError::Bus(BusError::Write(_))) => {
-                self.on_exception(bus, &ExceptionType::ExternalMemory).unwrap();
+                self.on_exception(bus, ExceptionType::ExternalMemory).unwrap();
             }
             Err(CpuError::Exception(CpuException::IllegalOpcode)) => {}
             Err(CpuError::Exception(CpuException::InvalidDescriptor)) => {}
@@ -1766,8 +1756,6 @@ impl Cpu {
         self.r[R_PC] = val;
     }
 
-
-    #[allow(clippy::too_many_arguments)]
     fn set_operand(
         &mut self,
         index: usize,
@@ -1794,11 +1782,11 @@ impl Cpu {
         match mn.dtype {
             Data::Byte => {
                 let b: u8 = bus.read_byte(addr, AccessCode::OperandFetch)?;
-                self.set_operand(index, 1, AddrMode::None, Data::Byte, None, None, u32::from(b));
+                self.set_operand(index, 1, AddrMode::None, Data::Byte, None, None, b as u32);
             }
             Data::Half => {
                 let h: u16 = bus.read_op_half(addr)?;
-                self.set_operand(index, 2, AddrMode::None, Data::Half, None, None, u32::from(h));
+                self.set_operand(index, 2, AddrMode::None, Data::Half, None, None, h as u32);
             }
             Data::Word => {
                 let w: u32 = bus.read_op_word(addr)?;
@@ -1836,7 +1824,7 @@ impl Cpu {
         match m {
             0 | 1 | 2 | 3 => {
                 // Positive Literal
-                self.set_operand(index, dsize, AddrMode::PositiveLiteral, dtype, etype, None, u32::from(descriptor_byte));
+                self.set_operand(index, dsize, AddrMode::PositiveLiteral, dtype, etype, None, descriptor_byte as u32);
             }
             4 => {
                 match r {
@@ -1856,7 +1844,7 @@ impl Cpu {
                     15 => {
                         // Halfword Immediate
                         let h = bus.read_op_half(addr + 1)?;
-                        self.set_operand(index, dsize + 2, AddrMode::HalfwordImmediate, dtype, etype, None, u32::from(h));
+                        self.set_operand(index, dsize + 2, AddrMode::HalfwordImmediate, dtype, etype, None, h as u32);
                     }
                     11 => {
                         // Illegal
@@ -1873,11 +1861,11 @@ impl Cpu {
                     15 => {
                         // Byte Immediate
                         let b = bus.read_byte(addr + 1, AccessCode::OperandFetch)?;
-                        self.set_operand(index, dsize + 1, AddrMode::ByteImmediate, dtype, etype, None, u32::from(b));
+                        self.set_operand(index, dsize + 1, AddrMode::ByteImmediate, dtype, etype, None, b as u32);
                     }
                     _ => {
                         // FP Short Offset
-                        self.set_operand(index, dsize, AddrMode::FPShortOffset, dtype, etype, Some(R_FP), u32::from(r));
+                        self.set_operand(index, dsize, AddrMode::FPShortOffset, dtype, etype, Some(R_FP), r as u32);
                     }
                 }
             }
@@ -1890,7 +1878,7 @@ impl Cpu {
                     }
                     _ => {
                         // AP Short Offset
-                        self.set_operand(index, dsize, AddrMode::APShortOffset, dtype, etype, Some(R_AP), u32::from(r));
+                        self.set_operand(index, dsize, AddrMode::APShortOffset, dtype, etype, Some(R_AP), r as u32);
                     }
                 }
             }
@@ -1920,7 +1908,7 @@ impl Cpu {
                     _ => {
                         // Halfword Displacement
                         let disp = bus.read_op_half(addr + 1)?;
-                        self.set_operand(index, dsize + 2, AddrMode::HalfwordDisplacement, dtype, etype, Some(r as usize), u32::from(disp));
+                        self.set_operand(index, dsize + 2, AddrMode::HalfwordDisplacement, dtype, etype, Some(r as usize), disp as u32);
                     }
                 }
             }
@@ -1937,7 +1925,7 @@ impl Cpu {
                             dtype,
                             etype,
                             Some(r as usize),
-                            u32::from(disp),
+                            disp as u32,
                         );
                     }
                 }
@@ -1948,7 +1936,7 @@ impl Cpu {
                     _ => {
                         // Byte Displacement
                         let disp = bus.read_byte(addr + 1, AccessCode::OperandFetch)?;
-                        self.set_operand(index, dsize + 1, AddrMode::ByteDisplacement, dtype, etype, Some(r as usize), u32::from(disp));
+                        self.set_operand(index, dsize + 1, AddrMode::ByteDisplacement, dtype, etype, Some(r as usize), disp as u32);
                     }
                 }
             }
@@ -1958,7 +1946,7 @@ impl Cpu {
                     _ => {
                         // Byte Displacement Deferred
                         let disp = bus.read_byte(addr + 1, AccessCode::OperandFetch)?;
-                        self.set_operand(index, dsize + 1, AddrMode::ByteDisplacementDeferred, dtype, etype, Some(r as usize), u32::from(disp));
+                        self.set_operand(index, dsize + 1, AddrMode::ByteDisplacementDeferred, dtype, etype, Some(r as usize), disp as u32);
                     }
                 }
             }
@@ -1977,7 +1965,7 @@ impl Cpu {
             },
             15 => {
                 // Negative Literal
-                self.set_operand(index, 1, AddrMode::NegativeLiteral, dtype, etype, None, u32::from(descriptor_byte));
+                self.set_operand(index, 1, AddrMode::NegativeLiteral, dtype, etype, None, descriptor_byte as u32);
             },
             _ => { return Err(CpuError::Exception(CpuException::IllegalOpcode)); }
         };
@@ -1991,11 +1979,11 @@ impl Cpu {
         bus: &mut Bus,
         index: usize,
         mn: &Mnemonic,
-        ot: OpType,
+        ot: &OpType,
         etype: Option<Data>,
         addr: usize,
     ) -> Result<(), CpuError> {
-        match ot {
+        match *ot {
             OpType::Lit => self.decode_literal_operand(bus, index, mn, addr),
             OpType::Src | OpType::Dest => self.decode_descriptor_operand(bus, index, mn.dtype, etype, addr, false),
         }
@@ -2020,9 +2008,9 @@ impl Cpu {
             // Special case for half-word opcodes
             let b2 = bus.read_byte(addr, AccessCode::InstrFetch)?;
             addr += 1;
-            (u16::from(b1) << 8) | u16::from(b2)
+            ((b1 as u16) << 8) | b2 as u16
         } else {
-            u16::from(b1)
+            b1 as u16
         };
 
         let mn = MNEMONICS.get(&index);
@@ -2035,7 +2023,7 @@ impl Cpu {
 
                 for (index, ot) in mn.ops.iter().enumerate() {
                     // Push a decoded operand
-                    self.decode_operand(bus, index, mn, *ot, etype, addr)?;
+                    self.decode_operand(bus, index, mn, ot, etype, addr)?;
                     etype = self.ir.operands[index].expanded_type;
                     addr += self.ir.operands[index].size as usize;
                 }
@@ -2051,7 +2039,7 @@ impl Cpu {
             None => return Err(CpuError::Exception(CpuException::IllegalOpcode)),
         }
 
-        Ok(())
+        return Ok(())
     }
 
     /// Convenience operations on flags.
@@ -2069,16 +2057,16 @@ impl Cpu {
     fn set_nz_flags(&mut self, val: u32, index: usize) {
         match self.ir.operands[index].data_type {
             Data::Word | Data::UWord => {
-                self.set_n_flag((val & 0x8000_0000) != 0);
+                self.set_n_flag((val & 0x80000000) != 0);
                 self.set_z_flag(val == 0);
             }
             Data::Half | Data::UHalf => {
                 self.set_n_flag((val & 0x8000) != 0);
-                self.set_z_flag(val.trailing_zeros() > 4);
+                self.set_z_flag((val & 0xffff) == 0);
             }
             Data::Byte | Data::SByte => {
                 self.set_n_flag((val & 0x80) != 0);
-                self.set_z_flag(val.trailing_zeros() > 2);
+                self.set_z_flag((val & 0xff) == 0);
             }
             Data::None => {
                 // Intentionally ignored
@@ -2205,12 +2193,11 @@ impl Cpu {
 }
 
 #[cfg(test)]
-#[allow(clippy::unreadable_literal)]
 mod tests {
     use super::*;
     use crate::bus::Bus;
 
-    const BASE: usize = 0x70_0000;
+    const BASE: usize = 0x700000;
 
     /// Helper function to set up and prepare a cpu and bus
     /// with a supplied program.
@@ -2229,8 +2216,8 @@ mod tests {
 
     #[test]
     fn sign_extension() {
-        assert_eq!(0xffff_8000, sign_extend_halfword(0x8000));
-        assert_eq!(0xffff_ff80, sign_extend_byte(0x80));
+        assert_eq!(0xffff8000, sign_extend_halfword(0x8000));
+        assert_eq!(0xffffff80, sign_extend_byte(0x80));
     }
 
     #[test]
@@ -2313,7 +2300,7 @@ mod tests {
 
         do_with_program(&program, |cpu, mut bus| {
             cpu.decode_descriptor_operand(&mut bus, 0, Data::Word, None, BASE + 1, false).unwrap();
-            assert_eq!(cpu.ir.operands[0], Operand::new(5, AddrMode::WordImmediate, Data::Word, None, None, 0x1234_5678));
+            assert_eq!(cpu.ir.operands[0], Operand::new(5, AddrMode::WordImmediate, Data::Word, None, None, 0x12345678));
         });
     }
 
@@ -2373,7 +2360,7 @@ mod tests {
 
         do_with_program(&program, |cpu, mut bus| {
             cpu.decode_descriptor_operand(&mut bus, 0, Data::Byte, None, BASE + 1, false).unwrap();
-            assert_eq!(cpu.ir.operands[0], Operand::new(5, AddrMode::Absolute, Data::Byte, None, None, 0x100));
+            assert_eq!(cpu.ir.operands[0], Operand::new(5, AddrMode::Absolute, Data::Byte, None, None, 0x00000100));
         });
     }
 
@@ -2383,7 +2370,7 @@ mod tests {
 
         do_with_program(&program, |cpu, mut bus| {
             cpu.decode_descriptor_operand(&mut bus, 0, Data::Byte, None, BASE + 1, false).unwrap();
-            assert_eq!(cpu.ir.operands[0], Operand::new(5, AddrMode::AbsoluteDeferred, Data::Byte, None, None, 0x100));
+            assert_eq!(cpu.ir.operands[0], Operand::new(5, AddrMode::AbsoluteDeferred, Data::Byte, None, None, 0x00000100));
         });
     }
 
@@ -2737,7 +2724,7 @@ mod tests {
         let program = [0x40];
         do_with_program(&program, |cpu, mut bus| {
             cpu.r[0] = 0;
-            cpu.decode_descriptor_operand(&mut bus, 0, Data::Byte, None, BASE, false).unwrap();
+            cpu.decode_descriptor_operand(&mut bus, 0, Data::Byte, None, BASE + 0, false).unwrap();
             cpu.write_op(bus, 0, 0x5a).unwrap();
             assert_eq!(0x5a, cpu.r[0]);
         });

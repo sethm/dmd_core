@@ -10,8 +10,8 @@ use std::time::Duration;
 use std::time::Instant;
 use std::collections::VecDeque;
 
-const START_ADDR: usize = 0x20_0000;
-const END_ADDR: usize = 0x20_0040;
+const START_ADDR: usize = 0x200000;
+const END_ADDR: usize = 0x2000040;
 const ADDRESS_RANGE: Range<usize> = START_ADDR..END_ADDR;
 
 // Vertical blanks should occur at 60Hz. This value is in nanoseconds
@@ -19,16 +19,16 @@ const VERTICAL_BLANK_DELAY: u32 = 16_666_666;  // 60 Hz
 
 // Delay rates selected when ACR[7] = 0
 const DELAY_RATES_A: [u32;13] = [
-    200_000_000, 90_909_096, 74_074_072, 50_000_000,
-    33_333_336, 16_666_668, 8_333_334, 9_523_810,
-    4_166_667, 2_083_333, 1_388_888, 1_041_666, 260_416,
+    200000000, 90909096, 74074072, 50000000,
+    33333336, 16666668, 8333334, 9523810,
+    4166667, 2083333, 1388888, 1041666, 260416,
 ];
 
 // Delay rates selected when ACR[7] = 1
 const DELAY_RATES_B: [u32;13] = [
-    133_333_344, 90_909_096, 74_074_072, 66_666_672,
-    33_333_336, 16_666_668, 8_333_334, 5_000_000,
-    4_166_667, 205_338, 5_555_555, 1_041_666, 520_833,
+    133333344, 90909096, 74074072, 66666672,
+    33333336, 16666668, 8333334, 5000000,
+    4166667, 205338, 5555555, 1041666, 520833,
 ];
 
 const PORT_0: usize = 0;
@@ -119,42 +119,36 @@ pub struct Duart {
     last_vblank: Instant,
 }
 
-impl Port {
-    fn new() -> Self {
-        Port {
-            mode: [0; 2],
-            stat: 0,
-            conf: 0,
-            rx_data: 0,
-            tx_data: 0,
-            mode_ptr: 0,
-            rx_queue: VecDeque::new(),
-            tx_queue: VecDeque::new(),
-            char_delay: Duration::new(0, 1_000_000),
-            next_rx: Instant::now(),
-            next_tx: Instant::now(),            
-        }
-    }
-}
-
-impl Default for Port {
-    fn default() -> Self {
-        Port::new()
-    }
-}
-
-impl Default for Duart {
-    fn default() -> Self {
-        Duart::new()
-    }
-}
-
 impl Duart {
     pub fn new() -> Duart {
         Duart {
             ports: [
-                Port::new(),
-                Port::new(),
+                Port {
+                    mode: [0; 2],
+                    stat: 0,
+                    conf: 0,
+                    rx_data: 0,
+                    tx_data: 0,
+                    mode_ptr: 0,
+                    rx_queue: VecDeque::new(),
+                    tx_queue: VecDeque::new(),
+                    char_delay: Duration::new(0, 1_000_000),
+                    next_rx: Instant::now(),
+                    next_tx: Instant::now(),
+                },
+                Port {
+                    mode: [0; 2],
+                    stat: 0,
+                    conf: 0,
+                    rx_data: 0,
+                    tx_data: 0,
+                    mode_ptr: 0,
+                    rx_queue: VecDeque::new(),
+                    tx_queue: VecDeque::new(),
+                    char_delay: Duration::new(0, 1_000_000),
+                    next_rx: Instant::now(),
+                    next_tx: Instant::now(),
+                },
             ],
             acr: 0,
             ipcr: 0x40,
@@ -193,14 +187,21 @@ impl Duart {
         };
 
         if !ctx.rx_queue.is_empty() && Instant::now() >= ctx.next_rx {
-            if let Some(c) = ctx.rx_queue.pop_back() {
-                if ctx.conf & CNF_ERX != 0 {
-                    ctx.rx_data = c;
-                    ctx.stat |= STS_RXR;
-                    self.istat |= istat;
-                    self.ivec |= ivec;
-                } else {
-                    ctx.stat |= STS_OER;
+            match ctx.rx_queue.pop_back() {
+                Some(c) => {
+                    if ctx.conf & CNF_ERX != 0 {
+                        ctx.rx_data = c;
+                        ctx.stat |= STS_RXR;
+                        self.istat |= istat;
+                        self.ivec |= ivec;
+                    } else {
+                        ctx.stat |= STS_OER;
+                    }
+                },
+                None => {
+                    // This is really unexpected! We just asserted
+                    // that the queue was not empty, so this should
+                    // really never happen.
                 }
             }
 
