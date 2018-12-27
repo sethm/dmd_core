@@ -1,3 +1,5 @@
+#![allow(clippy::unreadable_literal)]
+
 use crate::bus::Device;
 use crate::bus::AccessCode;
 use crate::err::BusError;
@@ -11,6 +13,12 @@ const ADDRESS_RANGE: Range<usize> = START_ADDRESS..END_ADDRESS;
 pub struct Mouse {
     pub x: u16,
     pub y: u16,
+}
+
+impl Default for Mouse {
+    fn default() -> Self {
+        Mouse::new()
+    }
 }
 
 impl Mouse {

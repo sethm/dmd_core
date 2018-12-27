@@ -1,3 +1,5 @@
+#![allow(clippy::unreadable_literal)]
+
 use crate::bus::*;
 use crate::err::BusError;
 
@@ -26,8 +28,8 @@ impl Mem {
         }
     }
 
-    pub fn as_slice(&self, range: Range<usize>) -> Result<&[u8], BusError> {
-        Ok(&self.ram[range])
+    pub fn as_slice(&self, range: Range<usize>) -> &[u8] {
+        &self.ram[range]
     }
 }
 
@@ -169,7 +171,7 @@ impl Index<usize> for Mem {
 }
 
 impl IndexMut<usize> for Mem {
-    fn index_mut<'a>(&'a mut self, idx: usize) -> &'a mut u8 {
+    fn index_mut(&'_ mut self, idx: usize) -> &'_ mut u8 {
         &mut self.ram[idx]
     }
 }

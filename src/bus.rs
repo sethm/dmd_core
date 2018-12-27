@@ -1,3 +1,5 @@
+#![allow(clippy::unreadable_literal)]
+
 use crate::err::BusError;
 use crate::mem::Mem;
 use crate::duart::Duart;
@@ -124,17 +126,17 @@ impl Bus {
     pub fn read_op_half(&mut self, address: usize) -> Result<u16, BusError> {
         let m = self.get_device(address)?;
 
-        Ok((m.read_byte(address, AccessCode::OperandFetch)? as u16)
-            | (m.read_byte(address + 1, AccessCode::OperandFetch)? as u16).wrapping_shl(8))
+        Ok(u16::from(m.read_byte(address, AccessCode::OperandFetch)?)
+            | u16::from(m.read_byte(address + 1, AccessCode::OperandFetch)?).wrapping_shl(8))
     }
 
     pub fn read_op_word(&mut self, address: usize) -> Result<u32, BusError> {
         let m = self.get_device(address)?;
 
-        Ok((m.read_byte(address, AccessCode::OperandFetch)? as u32)
-            | (m.read_byte(address + 1, AccessCode::OperandFetch)? as u32).wrapping_shl(8)
-            | (m.read_byte(address + 2, AccessCode::OperandFetch)? as u32).wrapping_shl(16)
-            | (m.read_byte(address + 3, AccessCode::OperandFetch)? as u32).wrapping_shl(24))
+        Ok(u32::from(m.read_byte(address, AccessCode::OperandFetch)?)
+            | u32::from(m.read_byte(address + 1, AccessCode::OperandFetch)?).wrapping_shl(8)
+            | u32::from(m.read_byte(address + 2, AccessCode::OperandFetch)?).wrapping_shl(16)
+            | u32::from(m.read_byte(address + 3, AccessCode::OperandFetch)?).wrapping_shl(24))
     }
 
     pub fn write_byte(&mut self, address: usize, val: u8) -> Result<(), BusError> {
@@ -159,7 +161,7 @@ impl Bus {
         self.get_device(address)?.load(address, data)
     }
 
-    pub fn video_ram(&self) -> Result<&[u8], BusError> {
+    pub fn video_ram(&self) -> &[u8] {
         self.ram.as_slice(0x0..0x19000)
     }
 
@@ -204,17 +206,11 @@ impl Bus {
         self.duart.output_port()
     }
 
-    pub fn get_nvram(&self) -> [u8; NVRAM_SIZE] {
-        let mut contents: [u8; NVRAM_SIZE] = [0u8; NVRAM_SIZE];
-
-        for i in 0..NVRAM_SIZE {
-            contents[i] = self.bbram[i];
-        }
-
-        contents
+    pub fn get_nvram(&self) -> &[u8] {
+        self.bbram.as_slice(0..NVRAM_SIZE)
     }
 
-    pub fn set_nvram(&mut self, nvram: &[u8; NVRAM_SIZE]) {
+    pub fn set_nvram(&mut self, nvram: &[u8]) {
         for (i, b) in nvram.into_iter().enumerate() {
             self.bbram[i] = *b;
         }

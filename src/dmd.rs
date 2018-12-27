@@ -1,3 +1,5 @@
+#![allow(clippy::unreadable_literal)]
+
 use crate::bus::{Bus, AccessCode};
 use crate::cpu::Cpu;
 use crate::err::BusError;
@@ -22,6 +24,12 @@ pub struct Dmd {
     bus: Bus,
 }
 
+impl Default for Dmd {
+    fn default() -> Self {
+        Dmd::new()
+    }
+}
+
 impl Dmd {
     pub fn new() -> Dmd {
         let cpu = Cpu::new();
@@ -40,7 +48,7 @@ impl Dmd {
         Ok(())
     }
 
-    pub fn video_ram(&self) -> Result<&[u8], BusError> {
+    pub fn video_ram(&self) -> &[u8] {
         self.bus.video_ram()
     }
 
@@ -109,11 +117,11 @@ impl Dmd {
         self.bus.duart_output()
     }
 
-    pub fn set_nvram(&mut self, nvram: &[u8; 8192]) {
+    pub fn set_nvram(&mut self, nvram: &[u8]) {
         self.bus.set_nvram(nvram);
     }
 
-    pub fn get_nvram(&self) -> [u8; 8192] {
+    pub fn get_nvram(&self) -> &[u8] {
         self.bus.get_nvram()
     }
 }
@@ -139,10 +147,7 @@ fn dmd_reset() -> c_int {
 fn dmd_video_ram() -> *const u8 {
     match DMD.lock() {
         Ok(dmd) => {
-            match dmd.video_ram() {
-                Ok(video_ram) => video_ram.as_ptr(),
-                Err(_) => ptr::null()
-            }
+            dmd.video_ram().as_ptr()
         }
         Err(_) => ptr::null()
     }
@@ -302,13 +307,10 @@ fn dmd_set_nvram(nvram: &[u8; 8192]) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_get_nvram(nvram: &mut [u8; 8192]) -> c_int {
+fn dmd_get_nvram(nvram: &mut [u8]) -> c_int {
     match DMD.lock() {
         Ok(dmd) => {
-            let buf = dmd.get_nvram();
-            for i in 0..8192 {
-                nvram[i] = buf[i];
-            }
+            nvram.clone_from_slice(&dmd.get_nvram());
             SUCCESS
         }
         Err(_) => ERROR
