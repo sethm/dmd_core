@@ -142,7 +142,7 @@ pub struct Duart {
     istat: u8,
     imr: u8,
     ivec: u8,
-    last_vblank: Instant,
+    next_vblank: Instant
 }
 
 impl Default for Duart {
@@ -165,15 +165,13 @@ impl Duart {
             istat: 0,
             imr: 0,
             ivec: 0,
-            last_vblank: Instant::now(),
+            next_vblank: Instant::now() + Duration::new(0, VERTICAL_BLANK_DELAY),
         }
     }
 
     pub fn get_interrupt(&mut self) -> Option<u8> {
-        let new_vblank_time: Instant = self.last_vblank + Duration::new(0, VERTICAL_BLANK_DELAY);
-
-        if Instant::now() > new_vblank_time {
-            self.last_vblank = Instant::now();
+        if Instant::now() > self.next_vblank {
+            self.next_vblank = Instant::now() + Duration::new(0, VERTICAL_BLANK_DELAY);
             self.vertical_blank();
         }
 

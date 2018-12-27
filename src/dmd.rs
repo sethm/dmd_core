@@ -307,10 +307,10 @@ fn dmd_set_nvram(nvram: &[u8; 8192]) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_get_nvram(nvram: &mut [u8]) -> c_int {
+fn dmd_get_nvram(nvram: &mut [u8; 8192]) -> c_int {
     match DMD.lock() {
         Ok(dmd) => {
-            nvram.clone_from_slice(&dmd.get_nvram());
+            nvram.clone_from_slice(dmd.get_nvram());
             SUCCESS
         }
         Err(_) => ERROR
