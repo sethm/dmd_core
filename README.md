@@ -27,6 +27,8 @@ however.
 
 ## Changelog
 
+0.6.1: Fix failing tets.
+
 0.6.0: Breaking change. Refactor DMD a bit to rename the function
        `read` to `read_word`, and added a `read_byte` function
        as well. Also refactored the CPU mnemonic lookup to be
