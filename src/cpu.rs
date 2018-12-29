@@ -172,7 +172,6 @@ pub struct Instruction {
     pub name: &'static str,
     pub data_type: Data,
     pub bytes: u8,
-    pub operand_count: u8,
     pub operands: [Operand; 4],
 }
 
@@ -510,7 +509,6 @@ impl Cpu {
                 name: "???",
                 data_type: Data::None,
                 bytes: 0,
-                operand_count: 0,
                 operands: [
                     Operand::new(0, AddrMode::None, Data::None, None, None, 0),
                     Operand::new(0, AddrMode::None, Data::None, None, None, 0),
@@ -2139,7 +2137,6 @@ impl Cpu {
                 self.ir.name = mn.name;
                 self.ir.data_type = mn.dtype;
                 self.ir.bytes = total_bytes as u8;
-                self.ir.operand_count = mn.ops.len() as u8;
             }
             None => return Err(CpuError::Exception(CpuException::IllegalOpcode))
         }
@@ -2572,12 +2569,11 @@ mod tests {
         });
     }
 
-    fn assert_instruction(cpu: &Cpu, opcode: u16, size: u8, name: &'static str, data_type: Data, operand_count: u8) {
+    fn assert_instruction(cpu: &Cpu, opcode: u16, size: u8, name: &'static str, data_type: Data) {
         assert_eq!(cpu.ir.opcode, opcode);
         assert_eq!(cpu.ir.bytes, size);
         assert_eq!(cpu.ir.name, name);
         assert_eq!(cpu.ir.data_type, data_type);
-        assert_eq!(cpu.ir.operand_count, operand_count);
     }
 
     #[test]
@@ -2585,7 +2581,7 @@ mod tests {
         let program = [0x30, 0x0d]; // ENBVJMP
         do_with_program(&program, |cpu, bus| {
             cpu.decode_instruction(bus).unwrap();
-            assert_instruction(cpu, 0x300d, 2, "ENBVJMP", Data::None, 0);
+            assert_instruction(cpu, 0x300d, 2, "ENBVJMP", Data::None);
         })
     }
 
@@ -2604,7 +2600,7 @@ mod tests {
                     Operand::new(2, AddrMode::Register, Data::Byte, Some(Data::SByte), Some(0), 0),
                     Operand::new(3, AddrMode::ByteDisplacement, Data::Byte, Some(Data::UHalf), Some(1), 4),
                 ];
-                assert_instruction(cpu, 0x87, 6, "MOVB", Data::Byte, 2);
+                assert_instruction(cpu, 0x87, 6, "MOVB", Data::Byte);
                 assert_eq!(cpu.ir.operands[0], expected_operands[0]);
                 assert_eq!(cpu.ir.operands[1], expected_operands[1]);
             }
@@ -2615,7 +2611,7 @@ mod tests {
                     Operand::new(2, AddrMode::ByteDisplacementDeferred, Data::Byte, None, Some(2), 0x30),
                     Operand::new(1, AddrMode::Register, Data::Byte, None, Some(3), 0),
                 ];
-                assert_instruction(cpu, 0x87, 4, "MOVB", Data::Byte, 2);
+                assert_instruction(cpu, 0x87, 4, "MOVB", Data::Byte);
                 assert_eq!(cpu.ir.operands[0], expected_operands[0]);
                 assert_eq!(cpu.ir.operands[1], expected_operands[1]);
             }
