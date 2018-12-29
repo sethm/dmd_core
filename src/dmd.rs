@@ -68,8 +68,15 @@ impl Dmd {
         self.cpu.r[(reg & 0xf) as usize]
     }
 
-    pub fn read(&mut self, addr: usize) -> Option<u32> {
+    pub fn read_word(&mut self, addr: usize) -> Option<u32> {
         match self.bus.read_word(addr, AccessCode::AddressFetch) {
+            Ok(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    pub fn read_byte(&mut self, addr: usize) -> Option<u8> {
+        match self.bus.read_byte(addr, AccessCode::AddressFetch) {
             Ok(d) => Some(d),
             _ => None,
         }
@@ -192,6 +199,38 @@ fn dmd_get_register(reg: uint8_t, val: &mut uint32_t) -> c_int {
         Ok(dmd) => {
             *val = dmd.get_register(reg);
             SUCCESS
+        },
+        Err(_) => ERROR
+    }
+}
+
+#[no_mangle]
+fn dmd_read_word(addr: uint32_t, val: &mut uint32_t) -> c_int {
+    match DMD.lock() {
+        Ok(mut dmd) => {
+            match dmd.read_word(addr as usize) {
+                Some(word) => {
+                    *val = word;
+                    SUCCESS
+                },
+                None => ERROR
+            }
+        },
+        Err(_) => ERROR
+    }
+}
+
+#[no_mangle]
+fn dmd_read_byte(addr: uint32_t, val: &mut uint8_t) -> c_int {
+    match DMD.lock() {
+        Ok(mut dmd) => {
+            match dmd.read_byte(addr as usize) {
+                Some(byte) => {
+                    *val = byte;
+                    SUCCESS
+                },
+                None => ERROR
+            }
         },
         Err(_) => ERROR
     }

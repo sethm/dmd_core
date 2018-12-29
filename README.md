@@ -27,6 +27,13 @@ however.
 
 ## Changelog
 
+0.6.0: Breaking change. Refactor DMD a bit to rename the function
+       `read` to `read_word`, and added a `read_byte` function
+       as well. Also refactored the CPU mnemonic lookup to be
+       more efficient using a lookup table instead of a HashMap.
+       Lastly, fixed a bug in the DUART that set the wrong
+       delay for one baud rate.
+
 0.5.0: Non-breaking but major change. `dmd_core` now presents a
        C compatible API to make interacting with C and C++ code
        easier, without needed to write a full stub library.
@@ -44,7 +51,12 @@ however.
 
 0.2.1: Initial release.
 
-## Emulator Reference Implementation
+## Emulator Reference Implementations
 
-For a reference implementation emulator that uses this library,
-please see the ["DMD" project on GitHub](https://github.com/sethm/dmd).
+Two implementations of DMD 5620 emulator use this core library.
+
+* The Linux native GTK application `dmd5620`: [https://github.com/sethm/dmd_gtk](https://github.com/sethm/dmd_gtk)
+
+* The Macintosh native Cocoa application `DMD 5620`: [https://github.com/sethm/dmd_mac](https://github.com/sethm/dmd_mac)
+
+A Windows native application is in the works.
