@@ -27,6 +27,8 @@ however.
 
 ## Changelog
 
+0.6.2: Fix UART character delay timing.
+
 0.6.1: Fix failing tets.
 
 0.6.0: Breaking change. Refactor DMD a bit to rename the function
