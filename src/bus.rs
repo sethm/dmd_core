@@ -162,7 +162,10 @@ impl Bus {
     }
 
     pub fn video_ram(&self) -> &[u8] {
-        self.ram.as_slice(0x0..0x19000)
+        let vid_register = (u16::from(self.vid[0]) << 8 | u16::from(self.vid[1])) as usize;
+        let start = vid_register * 4;
+        let end = start + 0x19000;
+        self.ram.as_slice(start..end)
     }
 
     pub fn service(&mut self) {

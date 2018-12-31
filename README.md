@@ -27,6 +27,10 @@ however.
 
 ## Changelog
 
+0.6.3: Bug fixes: Video Ram starting address was not being
+       updated correctly for video ram read; Implement
+       `read_word` for DUART (needed to run `gebaca`)
+
 0.6.2: Fix UART character delay timing.
 
 0.6.1: Fix failing tets.

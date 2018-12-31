@@ -471,12 +471,14 @@ impl Device for Duart {
         }
     }
 
-    fn read_half(&mut self, _address: usize, _access: AccessCode) -> Result<u16, BusError> {
-        unimplemented!()
+    fn read_half(&mut self, address: usize, access: AccessCode) -> Result<u16, BusError> {
+        let b = self.read_byte(address + 2, access)?;
+        Ok(u16::from(b))
     }
 
-    fn read_word(&mut self, _address: usize, _access: AccessCode) -> Result<u32, BusError> {
-        unimplemented!()
+    fn read_word(&mut self, address: usize, access: AccessCode) -> Result<u32, BusError> {
+        let b = self.read_byte(address + 3, access)?;
+        Ok(u32::from(b))
     }
 
     fn write_byte(&mut self, address: usize, val: u8, _access: AccessCode) -> Result<(), BusError> {
@@ -558,12 +560,12 @@ impl Device for Duart {
         Ok(())
     }
 
-    fn write_half(&mut self, _address: usize, _val: u16, _access: AccessCode) -> Result<(), BusError> {
-        unimplemented!()
+    fn write_half(&mut self, address: usize, val: u16, access: AccessCode) -> Result<(), BusError> {
+        self.write_byte(address + 2, val as u8, access)
     }
 
-    fn write_word(&mut self, _address: usize, _val: u32, _access: AccessCode) -> Result<(), BusError> {
-        unimplemented!()
+    fn write_word(&mut self, address: usize, val: u32, access: AccessCode) -> Result<(), BusError> {
+        self.write_byte(address + 3, val as u8, access)
     }
 
     fn load(&mut self, _address: usize, _data: &[u8]) -> Result<(), BusError> {
