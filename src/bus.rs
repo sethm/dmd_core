@@ -77,7 +77,7 @@ impl Bus {
         }
     }
 
-    fn get_device(&mut self, address: usize) -> Result<&mut Device, BusError> {
+    fn get_device(&mut self, address: usize) -> Result<&mut dyn Device, BusError> {
         if address < 0x20000 {
             return Ok(&mut self.rom);
         }

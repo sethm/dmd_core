@@ -30,7 +30,7 @@ impl Error for CpuException {
         }
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         match *self {
             CpuException::IllegalOpcode => None,
             CpuException::InvalidDescriptor => None,
@@ -78,7 +78,7 @@ impl Error for BusError {
         }
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         match *self {
             BusError::Init => None,
             BusError::Read(_) => None,
@@ -114,7 +114,7 @@ impl Error for CpuError {
         }
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         match *self {
             CpuError::Exception(ref e) => Some(e),
             CpuError::Bus(ref e) => Some(e),

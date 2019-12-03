@@ -183,7 +183,7 @@ fn dmd_step_loop(steps: usize) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_get_pc(pc: &mut uint32_t) -> c_int {
+fn dmd_get_pc(pc: &mut u32) -> c_int {
     match DMD.lock() {
         Ok(dmd) => {
             *pc = dmd.get_pc();
@@ -194,7 +194,7 @@ fn dmd_get_pc(pc: &mut uint32_t) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_get_register(reg: uint8_t, val: &mut uint32_t) -> c_int {
+fn dmd_get_register(reg: u8, val: &mut u32) -> c_int {
     match DMD.lock() {
         Ok(dmd) => {
             *val = dmd.get_register(reg);
@@ -205,7 +205,7 @@ fn dmd_get_register(reg: uint8_t, val: &mut uint32_t) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_read_word(addr: uint32_t, val: &mut uint32_t) -> c_int {
+fn dmd_read_word(addr: u32, val: &mut u32) -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {
             match dmd.read_word(addr as usize) {
@@ -221,7 +221,7 @@ fn dmd_read_word(addr: uint32_t, val: &mut uint32_t) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_read_byte(addr: uint32_t, val: &mut uint8_t) -> c_int {
+fn dmd_read_byte(addr: u32, val: &mut u8) -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {
             match dmd.read_byte(addr as usize) {
@@ -237,7 +237,7 @@ fn dmd_read_byte(addr: uint32_t, val: &mut uint8_t) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_get_duart_output_port(oport: &mut uint8_t) -> c_int {
+fn dmd_get_duart_output_port(oport: &mut u8) -> c_int {
     match DMD.lock() {
         Ok(dmd) => {
             *oport = dmd.duart_output();
@@ -248,7 +248,7 @@ fn dmd_get_duart_output_port(oport: &mut uint8_t) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_rx_char(c: uint8_t) -> c_int {
+fn dmd_rx_char(c: u8) -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {
             dmd.rx_char(c as u8);
@@ -259,7 +259,7 @@ fn dmd_rx_char(c: uint8_t) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_rx_keyboard(c: uint8_t) -> c_int {
+fn dmd_rx_keyboard(c: u8) -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {
             dmd.rx_keyboard(c);
@@ -270,7 +270,7 @@ fn dmd_rx_keyboard(c: uint8_t) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_mouse_move(x: uint16_t, y: uint16_t) -> c_int {
+fn dmd_mouse_move(x: u16, y: u16) -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {
             dmd.mouse_move(x, y);
@@ -281,7 +281,7 @@ fn dmd_mouse_move(x: uint16_t, y: uint16_t) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_mouse_down(button: uint8_t) -> c_int {
+fn dmd_mouse_down(button: u8) -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {
             dmd.mouse_down(button);
@@ -292,7 +292,7 @@ fn dmd_mouse_down(button: uint8_t) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_mouse_up(button: uint8_t) -> c_int {
+fn dmd_mouse_up(button: u8) -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {
             dmd.mouse_up(button);
@@ -303,7 +303,7 @@ fn dmd_mouse_up(button: uint8_t) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_rs232_tx_poll(tx_char: &mut uint8_t) -> c_int {
+fn dmd_rs232_tx_poll(tx_char: &mut u8) -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {
             match dmd.rs232_tx_poll() {
@@ -319,7 +319,7 @@ fn dmd_rs232_tx_poll(tx_char: &mut uint8_t) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_kb_tx_poll(tx_char: &mut uint8_t) -> c_int {
+fn dmd_kb_tx_poll(tx_char: &mut u8) -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {
             match dmd.kb_tx_poll() {
