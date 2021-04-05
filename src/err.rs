@@ -21,15 +21,6 @@ impl fmt::Display for CpuException {
 }
 
 impl Error for CpuException {
-    fn description(&self) -> &str {
-        match *self {
-            CpuException::IllegalOpcode => "illegal opcode",
-            CpuException::InvalidDescriptor => "invalid descriptor",
-            CpuException::PrivilegedOpcode => "privileged opcode",
-            CpuException::IntegerZeroDivide => "integer zero divide",
-        }
-    }
-
     fn cause(&self) -> Option<&dyn Error> {
         match *self {
             CpuException::IllegalOpcode => None,
@@ -66,18 +57,6 @@ impl fmt::Display for BusError {
 }
 
 impl Error for BusError {
-    fn description(&self) -> &str {
-        match *self {
-            BusError::Init => "initialize",
-            BusError::Read(_) => "read",
-            BusError::Write(_) => "store",
-            BusError::NoDevice(_) => "no device",
-            BusError::Range => "out of range",
-            BusError::Permission => "invalid permission",
-            BusError::Alignment => "alignment",
-        }
-    }
-
     fn cause(&self) -> Option<&dyn Error> {
         match *self {
             BusError::Init => None,
@@ -107,13 +86,6 @@ impl fmt::Display for CpuError {
 }
 
 impl Error for CpuError {
-    fn description(&self) -> &str {
-        match *self {
-            CpuError::Exception(ref e) => e.description(),
-            CpuError::Bus(ref e) => e.description(),
-        }
-    }
-
     fn cause(&self) -> Option<&dyn Error> {
         match *self {
             CpuError::Exception(ref e) => Some(e),

@@ -1,8 +1,8 @@
 #![allow(clippy::unreadable_literal)]
 
+use crate::duart::Duart;
 use crate::err::BusError;
 use crate::mem::Mem;
-use crate::duart::Duart;
 use crate::mouse::Mouse;
 use std::fmt::Debug;
 use std::ops::Range;
@@ -23,12 +23,11 @@ pub enum AccessCode {
     OperandFetch,
     Write,
     IrqAck,
-    IFAfterPCDisc,
+    IfAfterPcDisc,
     InstrPrefetch,
     InstrFetch,
     NoOp,
 }
-
 
 /// A virtual device on the bus.
 pub trait Device: Send + Sync + Debug {
@@ -60,8 +59,8 @@ pub struct Bus {
     rom: Mem,
     duart: Duart,
     mouse: Mouse,
-    vid: Mem,      // TODO: Figure out what device this really is
-    bbram: Mem,    // TODO: change to BBRAM when implemented
+    vid: Mem,   // TODO: Figure out what device this really is
+    bbram: Mem, // TODO: change to BBRAM when implemented
     ram: Mem,
 }
 
@@ -82,23 +81,23 @@ impl Bus {
             return Ok(&mut self.rom);
         }
 
-        if address >= 0x200000 && address < 0x200040 {
+        if (0x200000..0x200040).contains(&address) {
             return Ok(&mut self.duart);
         }
 
-        if address >= 0x400000 && address < 0x400004 {
+        if (0x400000..0x400004).contains(&address) {
             return Ok(&mut self.mouse);
         }
 
-        if address >= 0x500000 && address < 0x500002 {
+        if (0x500000..0x500002).contains(&address) {
             return Ok(&mut self.vid);
         }
 
-        if address >= 0x600000 && address < 0x602000 {
+        if (0x600000..0x602000).contains(&address) {
             return Ok(&mut self.bbram);
         }
 
-        if address >= 0x700000 && address < 0x800000 {
+        if (0x700000..0x800000).contains(&address) {
             return Ok(&mut self.ram);
         }
 
@@ -214,7 +213,7 @@ impl Bus {
     }
 
     pub fn set_nvram(&mut self, nvram: &[u8]) {
-        for (i, b) in nvram.into_iter().enumerate() {
+        for (i, b) in nvram.iter().enumerate() {
             self.bbram[i] = *b;
         }
     }
