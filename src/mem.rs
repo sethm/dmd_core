@@ -6,27 +6,25 @@ use crate::err::BusError;
 use std::fmt::Debug;
 use std::fmt::Error;
 use std::fmt::Formatter;
-use std::ops::Range;
 use std::ops::{Index, IndexMut};
 use std::vec::Vec;
+use std::ops::Range;
 
 pub struct Mem {
     address_range: Range<usize>,
     len: usize,
     ram: Vec<u8>,
     is_read_only: bool,
-    dirty: bool,
 }
 
 /// Memory is a Device with a single address range.
 impl Mem {
     pub fn new(start_address: usize, len: usize, is_read_only: bool) -> Mem {
         Mem {
-            address_range: start_address..start_address + len,
+            address_range: start_address..start_address+len,
             len,
             ram: vec![0; len],
             is_read_only,
-            dirty: false,
         }
     }
 
@@ -93,7 +91,7 @@ impl Device for Mem {
                 u32::from(self.ram[offset]).wrapping_shl(24)
                     | u32::from(self.ram[offset + 1]).wrapping_shl(16)
                     | u32::from(self.ram[offset + 2]).wrapping_shl(8)
-                    | u32::from(self.ram[offset + 3]),
+                    | u32::from(self.ram[offset + 3])
             )
         }
     }
@@ -109,9 +107,6 @@ impl Device for Mem {
         if address >= self.address_range().end {
             Err(BusError::Range)
         } else {
-            if self.ram[offset] != val {
-                self.dirty = true;
-            }
             self.ram[offset] = val;
             Ok(())
         }
@@ -127,13 +122,8 @@ impl Device for Mem {
         if address >= self.address_range().end {
             Err(BusError::Range)
         } else {
-            let b1 = (val.wrapping_shr(8) & 0xff) as u8;
-            let b2 = (val & 0xff) as u8;
-            if self.ram[offset] != b1 || self.ram[offset + 1] != b2 {
-                self.dirty = true;
-            }
-            self.ram[offset] = b1;
-            self.ram[offset + 1] = b2;
+            self.ram[offset] = (val.wrapping_shr(8) & 0xff) as u8;
+            self.ram[offset + 1] = (val & 0xff) as u8;
             Ok(())
         }
     }
@@ -148,19 +138,10 @@ impl Device for Mem {
         if address >= self.address_range().end {
             Err(BusError::Range)
         } else {
-            let b1 = (val.wrapping_shr(24) & 0xff) as u8;
-            let b2 = (val.wrapping_shr(16) & 0xff) as u8;
-            let b3 = (val.wrapping_shr(8) & 0xff) as u8;
-            let b4 = (val & 0xff) as u8;
-
-            if self.ram[offset] != b1 || self.ram[offset + 1] != b2 || self.ram[offset + 2] != b3 || self.ram[offset + 3] != b4 {
-                self.dirty = true;
-            }
-
-            self.ram[offset] = b1;
-            self.ram[offset + 1] = b2;
-            self.ram[offset + 2] = b3;
-            self.ram[offset + 3] = b4;
+            self.ram[offset] = (val.wrapping_shr(24) & 0xff) as u8;
+            self.ram[offset + 1] = (val.wrapping_shr(16) & 0xff) as u8;
+            self.ram[offset + 2] = (val.wrapping_shr(8) & 0xff) as u8;
+            self.ram[offset + 3] = (val & 0xff) as u8;
             Ok(())
         }
     }
@@ -178,14 +159,6 @@ impl Device for Mem {
             }
             Ok(())
         }
-    }
-
-    fn dirty(&self) -> bool {
-        self.dirty
-    }
-
-    fn clear_dirty(&mut self) {
-        self.dirty = false;
     }
 }
 

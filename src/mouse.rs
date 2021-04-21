@@ -1,7 +1,7 @@
 #![allow(clippy::unreadable_literal)]
 
-use crate::bus::AccessCode;
 use crate::bus::Device;
+use crate::bus::AccessCode;
 use crate::err::BusError;
 use std::ops::Range;
 
@@ -48,7 +48,7 @@ impl Device for Mouse {
     }
 
     fn read_half(&mut self, address: usize, _access: AccessCode) -> Result<u16, BusError> {
-        match address - START_ADDRESS {
+        match address-START_ADDRESS {
             0 => Ok(self.y),
             2 => Ok(self.x),
             _ => Err(BusError::NoDevice(address as u32)),
