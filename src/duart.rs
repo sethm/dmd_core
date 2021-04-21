@@ -4,34 +4,28 @@ use crate::bus::AccessCode;
 use crate::bus::Device;
 use crate::err::BusError;
 
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt::Error;
 use std::fmt::Formatter;
 use std::ops::Range;
 use std::time::Duration;
 use std::time::Instant;
-use std::collections::VecDeque;
 
 const START_ADDR: usize = 0x200000;
 const END_ADDR: usize = 0x2000040;
 const ADDRESS_RANGE: Range<usize> = START_ADDR..END_ADDR;
 
 // Vertical blanks should occur at 60Hz. This value is in nanoseconds
-const VERTICAL_BLANK_DELAY: u32 = 16_666_666;  // 60 Hz
+const VERTICAL_BLANK_DELAY: u32 = 16_666_666; // 60 Hz
 
 // Delay rates, in nanoseconds, selected when ACR[7] = 0
-const DELAY_RATES_A: [u32;13] = [
-    160000000, 72727272, 59259260, 40000000,
-    26666668, 13333334, 6666667, 7619047,
-    3333333, 1666666, 1111111, 833333, 208333
-];
+const DELAY_RATES_A: [u32; 13] =
+    [160000000, 72727272, 59259260, 40000000, 26666668, 13333334, 6666667, 7619047, 3333333, 1666666, 1111111, 833333, 208333];
 
 // Delay rates, in nanoseconds, selected when ACR[7] = 1
-const DELAY_RATES_B: [u32;13] = [
-    106666672, 72727272, 59259260, 53333336,
-    26666668, 13333334, 6666667, 4000000,
-    3333333, 1666666, 4444444, 833333, 416666
-];
+const DELAY_RATES_B: [u32; 13] =
+    [106666672, 72727272, 59259260, 53333336, 26666668, 13333334, 6666667, 4000000, 3333333, 1666666, 4444444, 833333, 416666];
 
 const PORT_0: usize = 0;
 const PORT_1: usize = 1;
@@ -52,7 +46,6 @@ const THRB: u8 = 0x2f;
 const IP_OPCR: u8 = 0x37;
 const OPBITS_SET: u8 = 0x3b;
 const OPBITS_RESET: u8 = 0x3f;
-
 
 //
 // Port Configuration Bits
@@ -96,7 +89,7 @@ const TX_INT: u8 = 0x10;
 const RX_INT: u8 = 0x20;
 
 struct Port {
-    mode: [u8;2],
+    mode: [u8; 2],
     stat: u8,
     conf: u8,
     rx_data: u8,
@@ -142,7 +135,7 @@ pub struct Duart {
     istat: u8,
     imr: u8,
     ivec: u8,
-    next_vblank: Instant
+    next_vblank: Instant,
 }
 
 impl Default for Duart {
@@ -154,10 +147,7 @@ impl Default for Duart {
 impl Duart {
     pub fn new() -> Duart {
         Duart {
-            ports: [
-                Port::new(),
-                Port::new(),
-            ],
+            ports: [Port::new(), Port::new()],
             acr: 0,
             ipcr: 0x40,
             inprt: 0xb,
@@ -216,10 +206,7 @@ impl Duart {
             _ => (ISTS_TBI, ISTS_RBI),
         };
 
-        if (ctx.conf & CNF_ETX) != 0 &&
-            (ctx.stat & STS_TXR) == 0 &&
-            (ctx.stat & STS_TXE) == 0 && Instant::now() >= ctx.next_tx
-        {
+        if (ctx.conf & CNF_ETX) != 0 && (ctx.stat & STS_TXR) == 0 && (ctx.stat & STS_TXE) == 0 && Instant::now() >= ctx.next_tx {
             let c = ctx.tx_data;
             ctx.stat |= STS_TXR;
             ctx.stat |= STS_TXE;
@@ -395,7 +382,7 @@ impl Duart {
                 ctx.stat |= STS_TXE;
                 ctx.conf &= !CNF_ETX;
             }
-            4 => ctx.stat &= !(STS_FER|STS_PER|STS_OER),
+            4 => ctx.stat &= !(STS_FER | STS_PER | STS_OER),
             _ => {}
         }
     }
@@ -428,9 +415,7 @@ impl Device for Duart {
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
                 Ok(val)
             }
-            CSRA => {
-                Ok(self.ports[PORT_0].stat)
-            }
+            CSRA => Ok(self.ports[PORT_0].stat),
             THRA => {
                 let mut ctx = &mut self.ports[PORT_0];
                 ctx.stat &= !STS_RXR;
@@ -445,18 +430,14 @@ impl Device for Duart {
                 self.istat &= !ISTS_IPC;
                 Ok(result)
             }
-            ISR_MASK => {
-                Ok(self.istat)
-            }
+            ISR_MASK => Ok(self.istat),
             MR12B => {
                 let mut ctx = &mut self.ports[PORT_1];
                 let val = ctx.mode[ctx.mode_ptr];
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
                 Ok(val)
             }
-            CSRB => {
-                Ok(self.ports[PORT_1].stat)
-            }
+            CSRB => Ok(self.ports[PORT_1].stat),
             THRB => {
                 let mut ctx = &mut self.ports[PORT_1];
                 ctx.stat &= !STS_RXR;
@@ -464,9 +445,7 @@ impl Device for Duart {
                 self.ivec &= !KEYBOARD_INT;
                 Ok(ctx.rx_data)
             }
-            IP_OPCR => {
-                Ok(self.inprt)
-            }
+            IP_OPCR => Ok(self.inprt),
             _ => Ok(0),
         }
     }

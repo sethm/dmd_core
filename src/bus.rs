@@ -41,6 +41,10 @@ pub trait Device: Send + Sync + Debug {
     fn write_half(&mut self, address: usize, val: u16, access: AccessCode) -> Result<(), BusError>;
     fn write_word(&mut self, address: usize, val: u32, access: AccessCode) -> Result<(), BusError>;
     fn load(&mut self, address: usize, data: &[u8]) -> Result<(), BusError>;
+    fn dirty(&self) -> bool {
+        false
+    }
+    fn clear_dirty(&mut self) {}
 }
 
 //
@@ -165,6 +169,14 @@ impl Bus {
         let start = vid_register * 4;
         let end = start + 0x19000;
         self.ram.as_slice(start..end)
+    }
+
+    pub fn video_ram_dirty(&self) -> bool {
+        self.vid.dirty()
+    }
+
+    pub fn video_ram_clear_dirty(&mut self) {
+        self.vid.clear_dirty()
     }
 
     pub fn service(&mut self) {
