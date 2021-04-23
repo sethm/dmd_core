@@ -48,6 +48,14 @@ const IPL_TABLE: [u32; 64] = [
 const WE32100_VERSION: u32 = 0x1a;
 const HALFWORD_MNEMONIC_COUNT: usize = 11;
 
+macro_rules! trace {
+    ($bus:ident, $steps:expr, $msg:expr) => {
+        if ($bus.trace_enabled()) {
+            $bus.trace($steps, $msg)
+        }
+    };
+}
+
 pub enum ExceptionType {
     ExternalMemory,
 }
@@ -152,6 +160,15 @@ impl Operand {
             None => self.data_type,
         }
     }
+
+    fn clear(&mut self) {
+        self.size = 0;
+        self.mode = AddrMode::None;
+        self.data_type = Data::None;
+        self.expanded_type = None;
+        self.register = None;
+        self.embedded = 0;
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -173,16 +190,59 @@ pub struct Instruction {
 
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.data_type {
-            Data::None => Ok(()),
-            Data::Byte | Data::SByte => {
-                write!(f, "0x{:02x}", self.data as u8)
+        match self.mode {
+            AddrMode::None => Ok(()),
+            AddrMode::Absolute => {
+                write!(f, "0x{}", self.data)
             }
-            Data::Half | Data::UHalf => {
-                write!(f, "0x{:04x}", self.data as u16)
+            AddrMode::AbsoluteDeferred => write!(f, "*$0x{:x}", self.data),
+            AddrMode::ByteDisplacement => {
+                write!(f, "{}(%r{})", self.data as i8, self.register.unwrap())
             }
-            Data::Word | Data::UWord => {
-                write!(f, "0x{:08x}", self.data)
+            AddrMode::ByteDisplacementDeferred => {
+                write!(f, "*{}(%r{})", self.data as i8, self.register.unwrap())
+            }
+            AddrMode::HalfwordDisplacement => {
+                write!(f, "0x{:x}(%r{})", self.data as i16, self.register.unwrap())
+            }
+            AddrMode::HalfwordDisplacementDeferred => {
+                write!(f, "*0x{:x}(%r{})", self.data as i16, self.register.unwrap())
+            }
+            AddrMode::WordDisplacement => {
+                write!(f, "0x{:x}(%r{})", self.data, self.register.unwrap())
+            }
+            AddrMode::WordDisplacementDeferred => {
+                write!(f, "*0x{:x}(%r{})", self.data, self.register.unwrap())
+            }
+            AddrMode::ApShortOffset => {
+                write!(f, "{}(%ap)", self.data as i8)
+            }
+            AddrMode::FpShortOffset => {
+                write!(f, "{}(%fp)", self.data as i8)
+            }
+            AddrMode::ByteImmediate => {
+                write!(f, "&{}", self.data as u8)
+            }
+            AddrMode::HalfwordImmediate => {
+                write!(f, "&0x{:x}", self.data as u16)
+            }
+            AddrMode::WordImmediate => {
+                write!(f, "&0x{:x}", self.data)
+            }
+            AddrMode::PositiveLiteral => {
+                write!(f, "$0x{:x}", self.data)
+            }
+            AddrMode::NegativeLiteral => {
+                write!(f, "-$0x{:x}", self.data)
+            }
+            AddrMode::Register => {
+                write!(f, "%r{}", self.register.unwrap())
+            }
+            AddrMode::RegisterDeferred => {
+                write!(f, "(%r{})", self.register.unwrap())
+            }
+            AddrMode::Expanded => {
+                write!(f, "{{???}}")
             }
         }
     }
@@ -190,11 +250,23 @@ impl fmt::Display for Operand {
 
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{:5} {}{}{}{}",
-            self.name, self.operands[0], self.operands[1], self.operands[2], self.operands[3]
-        )
+        let _ = write!(f, "{:8} ", self.name);
+
+        for index in 0..=3 {
+            let op = &self.operands[index];
+
+            if op.mode == AddrMode::None {
+                break;
+            }
+
+            if index == 0 {
+                let _ = write!(f, "{}", op);
+            } else {
+                let _ = write!(f, ",{}", op);
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -948,14 +1020,17 @@ impl Cpu {
         if let Some(val) = bus.get_interrupts() {
             let cpu_ipl = (self.r[R_PSW]) >> 13 & 0xf;
             if cpu_ipl < IPL_TABLE[(val & 0x3f) as usize] {
+                trace!(
+                    bus,
+                    self.steps,
+                    &format!("[{:08x}] INTERRUPT 0x{:x}", &self.r[R_PC], (!val) & 0x3f)
+                );
                 self.on_interrupt(bus, (!val) & 0x3f);
             }
         }
 
         self.decode_instruction(bus)?;
         let mut pc_increment: i32 = i32::from(self.ir.bytes);
-
-        bus.trace(self.steps, &self.ir);
 
         match self.ir.opcode {
             NOP => {
@@ -1905,18 +1980,24 @@ impl Cpu {
     pub fn step(&mut self, bus: &mut Bus) {
         // TODO: On CPU Exception or Bus Error, handle each error with the appropriate exception handler routine
         match self.dispatch(bus) {
-            Ok(i) => self.r[R_PC] = (self.r[R_PC] as i32 + i) as u32,
-            Err(CpuError::Bus(BusError::Alignment)) => {}
-            Err(CpuError::Bus(BusError::Permission)) => {}
+            Ok(i) => {
+                // We should have the necessary information to trace after dispatch.
+                trace!(bus, self.steps, &format!("[{:08x}] {}", &self.r[R_PC], &self.ir));
+                self.r[R_PC] = (self.r[R_PC] as i32 + i) as u32
+            }
             Err(CpuError::Bus(BusError::NoDevice(_)))
             | Err(CpuError::Bus(BusError::Read(_)))
             | Err(CpuError::Bus(BusError::Write(_))) => {
                 self.on_exception(bus, &ExceptionType::ExternalMemory).unwrap();
             }
-            Err(CpuError::Exception(CpuException::IllegalOpcode)) => {}
-            Err(CpuError::Exception(CpuException::InvalidDescriptor)) => {}
-            Err(CpuError::Exception(CpuException::PrivilegedOpcode)) => {}
-            Err(_) => {}
+            // Err(CpuError::Bus(BusError::Alignment)) => {}
+            // Err(CpuError::Bus(BusError::Permission)) => {}
+            // Err(CpuError::Exception(CpuException::IllegalOpcode)) => {}
+            // Err(CpuError::Exception(CpuException::InvalidDescriptor)) => {}
+            // Err(CpuError::Exception(CpuException::PrivilegedOpcode)) => {}
+            Err(e) => {
+                panic!("Unexpected CPU Error: {}", e)
+            }
         }
     }
 
@@ -2393,12 +2474,13 @@ impl Cpu {
 
                 for (index, ot) in mn.ops.iter().enumerate() {
                     if *ot == OpType::None {
-                        break;
+                        self.ir.operands[index].clear();
+                    } else {
+                        // Push a decoded operand
+                        self.decode_operand(bus, index, mn, *ot, etype, addr)?;
+                        etype = self.ir.operands[index].expanded_type;
+                        addr += self.ir.operands[index].size as usize;
                     }
-                    // Push a decoded operand
-                    self.decode_operand(bus, index, mn, *ot, etype, addr)?;
-                    etype = self.ir.operands[index].expanded_type;
-                    addr += self.ir.operands[index].size as usize;
                 }
 
                 let total_bytes = addr - initial_addr;

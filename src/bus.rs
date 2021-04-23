@@ -5,8 +5,8 @@ use crate::err::BusError;
 use crate::mem::Mem;
 use crate::mouse::Mouse;
 use std::io::Write;
-use std::{fmt, fs::File, ops::Range};
 use std::{fmt::Debug, fs::OpenOptions};
+use std::{fs::File, ops::Range};
 
 const NVRAM_SIZE: usize = 8192;
 
@@ -108,8 +108,8 @@ impl Bus {
     }
 
     pub fn trace_on(&mut self, name: &str) -> std::io::Result<()> {
-        let mut out = OpenOptions::new().write(true).open(name)?;
-        write!(out, "TRACE START")?;
+        let mut out = OpenOptions::new().create(true).write(true).open(name)?;
+        writeln!(out, "TRACE START")?;
         self.trace_log = Some(out);
         Ok(())
     }
@@ -122,12 +122,9 @@ impl Bus {
         self.trace_log = None;
     }
 
-    pub fn trace<T>(&mut self, step: u64, object: &T)
-    where
-        T: fmt::Display,
-    {
+    pub fn trace(&mut self, step: u64, line: &str) {
         if let Some(trace_log) = &mut self.trace_log {
-            let _ = writeln!(trace_log, "{:08}: {}", step, object);
+            let _ = writeln!(trace_log, "{:08}: {}", step, line);
         }
     }
 

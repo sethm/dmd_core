@@ -175,8 +175,14 @@ fn dmd_step() -> c_int {
     }
 }
 
+/// # Safety
+///
+/// Uses a raw pointer.
+///
 #[no_mangle]
-fn dmd_trace_on(file_name: &CStr) -> c_int {
+pub unsafe fn dmd_trace_on(file_name: *const c_char) -> c_int {
+    let file_name = CStr::from_ptr(file_name);
+
     match DMD.lock() {
         Ok(mut dmd) => match file_name.to_str() {
             Ok(file_name) => match dmd.trace_on(file_name) {

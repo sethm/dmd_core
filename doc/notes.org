@@ -1,0 +1,58 @@
+#+TITLE:  DMD 5620 Core Notes
+#+AUTHOR: Seth Morabito
+#+EMAIL:  web@loomcom.com
+#+DATE:   <2021-04-23 Fri 12:33>
+#+STARTUP: showall inlineimages
+#+OPTIONS: toc:nil num:nil
+
+* About
+
+  This document contains miscellaneous development notes taken while working
+  on devleopment.
+
+* Features
+
+** CPU Idle Loop Detection
+
+   There are several interesting blocks that look like idle
+   loops. Ideally, we want to detect these loops and just idle the CPU
+   until the next interrupt is likely to occur.
+
+*** Idle Loop Example 1
+
+    This tight loop occurs early on before startup is complete, and only exits
+    via interrupt which sets some value in ~*$0x71a79c~.
+    
+    #+BEGIN_EXAMPLE
+      [0000678d] MOVH     *$0x71a79c,%r0
+      [00006795] CMPW     %r1,%r0
+      [00006798] BLB
+    #+END_EXAMPLE
+
+*** Idle Loop Example 2
+
+    This occurs later on after startup is complete. It continuously calls
+    the function at ~0x715c~.
+
+    #+BEGIN_EXAMPLE
+      [0000068c] BITW     %r0,$0x16
+      [0000068f] BEB
+      [00000659] TSTB     0x6293186
+      [0000065f] BNEB
+      [00000661] TSTW     64(%r9)
+      [00000664] BNEB
+      [0000715c] CALL     (%r12),0x29020
+      [0000715c] SAVE     %r9
+      [0000715e] MOVW     $0x71c590,%r1
+      [00007161] ADDW3    $0x71c590,0x1096,%r0
+      [00007169] TSTH     (%r0)
+      [0000716b] BLEB
+      [00007170] MOVW     *$0x719024,%r0
+      [00007177] MOVW     (%r0),%r0
+      [0000717a] TSTH     52(%r0)
+      [0000717d] BLEB
+      [00007182] MOVW     %r1,%r0
+      [00007185] RESTORE  %r9
+      [0000068c] RET
+
+    #+END_EXAMPLE
