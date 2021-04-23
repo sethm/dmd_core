@@ -1,14 +1,14 @@
 #![allow(clippy::unreadable_literal)]
 
-use crate::bus::{Bus, AccessCode};
+use crate::bus::{AccessCode, Bus};
 use crate::cpu::Cpu;
 use crate::err::BusError;
 use crate::rom_hi::HI_ROM;
 use crate::rom_lo::LO_ROM;
 
 use libc::*;
-use std::ptr;
 use std::sync::Mutex;
+use std::{ffi::CStr, ptr};
 
 lazy_static! {
     static ref DMD: Mutex<Dmd> = Mutex::new(Dmd::new());
@@ -38,6 +38,14 @@ impl Dmd {
             cpu,
             bus,
         }
+    }
+
+    pub fn trace_on(&mut self, name: &str) -> std::io::Result<()> {
+        self.bus.trace_on(name)
+    }
+
+    pub fn trace_off(&mut self) {
+        self.bus.trace_off()
     }
 
     pub fn reset(&mut self) -> Result<(), BusError> {
@@ -140,23 +148,19 @@ impl Dmd {
 #[no_mangle]
 fn dmd_reset() -> c_int {
     match DMD.lock() {
-        Ok(mut dmd) => {
-            match dmd.reset() {
-                Ok(()) => SUCCESS,
-                Err(_) => ERROR
-            }
-        }
-        Err(_) => ERROR
+        Ok(mut dmd) => match dmd.reset() {
+            Ok(()) => SUCCESS,
+            Err(_) => ERROR,
+        },
+        Err(_) => ERROR,
     }
 }
 
 #[no_mangle]
 fn dmd_video_ram() -> *const u8 {
     match DMD.lock() {
-        Ok(dmd) => {
-            dmd.video_ram().as_ptr()
-        }
-        Err(_) => ptr::null()
+        Ok(dmd) => dmd.video_ram().as_ptr(),
+        Err(_) => ptr::null(),
     }
 }
 
@@ -167,7 +171,21 @@ fn dmd_step() -> c_int {
             dmd.step();
             SUCCESS
         }
-        Err(_) => ERROR
+        Err(_) => ERROR,
+    }
+}
+
+#[no_mangle]
+fn dmd_trace_on(file_name: &CStr) -> c_int {
+    match DMD.lock() {
+        Ok(mut dmd) => match file_name.to_str() {
+            Ok(file_name) => match dmd.trace_on(file_name) {
+                Ok(()) => SUCCESS,
+                Err(_) => ERROR,
+            },
+            Err(_) => ERROR,
+        },
+        Err(_) => ERROR,
     }
 }
 
@@ -177,8 +195,8 @@ fn dmd_step_loop(steps: usize) -> c_int {
         Ok(mut dmd) => {
             dmd.run(steps);
             SUCCESS
-        },
-        Err(_) => ERROR
+        }
+        Err(_) => ERROR,
     }
 }
 
@@ -188,8 +206,8 @@ fn dmd_get_pc(pc: &mut u32) -> c_int {
         Ok(dmd) => {
             *pc = dmd.get_pc();
             SUCCESS
-        },
-        Err(_) => ERROR
+        }
+        Err(_) => ERROR,
     }
 }
 
@@ -199,40 +217,36 @@ fn dmd_get_register(reg: u8, val: &mut u32) -> c_int {
         Ok(dmd) => {
             *val = dmd.get_register(reg);
             SUCCESS
-        },
-        Err(_) => ERROR
+        }
+        Err(_) => ERROR,
     }
 }
 
 #[no_mangle]
 fn dmd_read_word(addr: u32, val: &mut u32) -> c_int {
     match DMD.lock() {
-        Ok(mut dmd) => {
-            match dmd.read_word(addr as usize) {
-                Some(word) => {
-                    *val = word;
-                    SUCCESS
-                },
-                None => ERROR
+        Ok(mut dmd) => match dmd.read_word(addr as usize) {
+            Some(word) => {
+                *val = word;
+                SUCCESS
             }
+            None => ERROR,
         },
-        Err(_) => ERROR
+        Err(_) => ERROR,
     }
 }
 
 #[no_mangle]
 fn dmd_read_byte(addr: u32, val: &mut u8) -> c_int {
     match DMD.lock() {
-        Ok(mut dmd) => {
-            match dmd.read_byte(addr as usize) {
-                Some(byte) => {
-                    *val = byte;
-                    SUCCESS
-                },
-                None => ERROR
+        Ok(mut dmd) => match dmd.read_byte(addr as usize) {
+            Some(byte) => {
+                *val = byte;
+                SUCCESS
             }
+            None => ERROR,
         },
-        Err(_) => ERROR
+        Err(_) => ERROR,
     }
 }
 
@@ -243,7 +257,7 @@ fn dmd_get_duart_output_port(oport: &mut u8) -> c_int {
             *oport = dmd.duart_output();
             SUCCESS
         }
-        Err(_) => ERROR
+        Err(_) => ERROR,
     }
 }
 
@@ -254,7 +268,7 @@ fn dmd_rx_char(c: u8) -> c_int {
             dmd.rx_char(c as u8);
             SUCCESS
         }
-        Err(_) => ERROR
+        Err(_) => ERROR,
     }
 }
 
@@ -265,7 +279,7 @@ fn dmd_rx_keyboard(c: u8) -> c_int {
             dmd.rx_keyboard(c);
             SUCCESS
         }
-        Err(_) => ERROR
+        Err(_) => ERROR,
     }
 }
 
@@ -276,7 +290,7 @@ fn dmd_mouse_move(x: u16, y: u16) -> c_int {
             dmd.mouse_move(x, y);
             SUCCESS
         }
-        Err(_) => ERROR
+        Err(_) => ERROR,
     }
 }
 
@@ -287,7 +301,7 @@ fn dmd_mouse_down(button: u8) -> c_int {
             dmd.mouse_down(button);
             SUCCESS
         }
-        Err(_) => ERROR
+        Err(_) => ERROR,
     }
 }
 
@@ -298,39 +312,35 @@ fn dmd_mouse_up(button: u8) -> c_int {
             dmd.mouse_up(button);
             SUCCESS
         }
-        Err(_) => ERROR
+        Err(_) => ERROR,
     }
 }
 
 #[no_mangle]
 fn dmd_rs232_tx_poll(tx_char: &mut u8) -> c_int {
     match DMD.lock() {
-        Ok(mut dmd) => {
-            match dmd.rs232_tx_poll() {
-                Some(c) => {
-                    *tx_char = c;
-                    SUCCESS
-                }
-                None => BUSY
+        Ok(mut dmd) => match dmd.rs232_tx_poll() {
+            Some(c) => {
+                *tx_char = c;
+                SUCCESS
             }
-        }
-        Err(_) => ERROR
+            None => BUSY,
+        },
+        Err(_) => ERROR,
     }
 }
 
 #[no_mangle]
 fn dmd_kb_tx_poll(tx_char: &mut u8) -> c_int {
     match DMD.lock() {
-        Ok(mut dmd) => {
-            match dmd.kb_tx_poll() {
-                Some(c) => {
-                    *tx_char = c;
-                    SUCCESS
-                }
-                None => BUSY
+        Ok(mut dmd) => match dmd.kb_tx_poll() {
+            Some(c) => {
+                *tx_char = c;
+                SUCCESS
             }
-        }
-        Err(_) => ERROR
+            None => BUSY,
+        },
+        Err(_) => ERROR,
     }
 }
 
@@ -341,7 +351,7 @@ fn dmd_set_nvram(nvram: &[u8; 8192]) -> c_int {
             dmd.set_nvram(nvram);
             SUCCESS
         }
-        Err(_) => ERROR
+        Err(_) => ERROR,
     }
 }
 
@@ -352,7 +362,7 @@ fn dmd_get_nvram(nvram: &mut [u8; 8192]) -> c_int {
             nvram.clone_from_slice(dmd.get_nvram());
             SUCCESS
         }
-        Err(_) => ERROR
+        Err(_) => ERROR,
     }
 }
 

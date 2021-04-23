@@ -1,7 +1,7 @@
 #![allow(clippy::unreadable_literal)]
 
-use crate::bus::Device;
 use crate::bus::AccessCode;
+use crate::bus::Device;
 use crate::err::BusError;
 use std::ops::Range;
 
@@ -48,7 +48,7 @@ impl Device for Mouse {
     }
 
     fn read_half(&mut self, address: usize, _access: AccessCode) -> Result<u16, BusError> {
-        match address-START_ADDRESS {
+        match address - START_ADDRESS {
             0 => Ok(self.y),
             2 => Ok(self.x),
             _ => Err(BusError::NoDevice(address as u32)),
@@ -59,15 +59,30 @@ impl Device for Mouse {
         unimplemented!()
     }
 
-    fn write_byte(&mut self, _address: usize, _val: u8, _access: AccessCode) -> Result<(), BusError> {
+    fn write_byte(
+        &mut self,
+        _address: usize,
+        _val: u8,
+        _access: AccessCode,
+    ) -> Result<(), BusError> {
         unimplemented!()
     }
 
-    fn write_half(&mut self, _address: usize, _val: u16, _access: AccessCode) -> Result<(), BusError> {
+    fn write_half(
+        &mut self,
+        _address: usize,
+        _val: u16,
+        _access: AccessCode,
+    ) -> Result<(), BusError> {
         unimplemented!()
     }
 
-    fn write_word(&mut self, _address: usize, _val: u32, _access: AccessCode) -> Result<(), BusError> {
+    fn write_word(
+        &mut self,
+        _address: usize,
+        _val: u32,
+        _access: AccessCode,
+    ) -> Result<(), BusError> {
         unimplemented!()
     }
 

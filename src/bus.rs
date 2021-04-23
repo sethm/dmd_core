@@ -4,8 +4,9 @@ use crate::duart::Duart;
 use crate::err::BusError;
 use crate::mem::Mem;
 use crate::mouse::Mouse;
-use std::fmt::Debug;
-use std::ops::Range;
+use std::io::Write;
+use std::{fmt, fs::File, ops::Range};
+use std::{fmt::Debug, fs::OpenOptions};
 
 const NVRAM_SIZE: usize = 8192;
 
@@ -62,6 +63,7 @@ pub struct Bus {
     vid: Mem,   // TODO: Figure out what device this really is
     bbram: Mem, // TODO: change to BBRAM when implemented
     ram: Mem,
+    trace_log: Option<File>,
 }
 
 impl Bus {
@@ -73,6 +75,7 @@ impl Bus {
             vid: Mem::new(0x500000, 0x2, false),
             bbram: Mem::new(0x600000, 0x2000, false),
             ram: Mem::new(0x700000, mem_size, false),
+            trace_log: None,
         }
     }
 
@@ -102,6 +105,30 @@ impl Bus {
         }
 
         Err(BusError::NoDevice(address as u32))
+    }
+
+    pub fn trace_on(&mut self, name: &str) -> std::io::Result<()> {
+        let mut out = OpenOptions::new().write(true).open(name)?;
+        write!(out, "TRACE START")?;
+        self.trace_log = Some(out);
+        Ok(())
+    }
+
+    pub fn trace_enabled(&self) -> bool {
+        self.trace_log.is_some()
+    }
+
+    pub fn trace_off(&mut self) {
+        self.trace_log = None;
+    }
+
+    pub fn trace<T>(&mut self, step: u64, object: &T)
+    where
+        T: fmt::Display,
+    {
+        if let Some(trace_log) = &mut self.trace_log {
+            let _ = writeln!(trace_log, "{:08}: {}", step, object);
+        }
     }
 
     pub fn read_byte(&mut self, address: usize, access: AccessCode) -> Result<u8, BusError> {

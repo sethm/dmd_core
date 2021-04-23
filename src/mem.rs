@@ -6,9 +6,9 @@ use crate::err::BusError;
 use std::fmt::Debug;
 use std::fmt::Error;
 use std::fmt::Formatter;
+use std::ops::Range;
 use std::ops::{Index, IndexMut};
 use std::vec::Vec;
-use std::ops::Range;
 
 pub struct Mem {
     address_range: Range<usize>,
@@ -21,7 +21,7 @@ pub struct Mem {
 impl Mem {
     pub fn new(start_address: usize, len: usize, is_read_only: bool) -> Mem {
         Mem {
-            address_range: start_address..start_address+len,
+            address_range: start_address..start_address + len,
             len,
             ram: vec![0; len],
             is_read_only,
@@ -91,7 +91,7 @@ impl Device for Mem {
                 u32::from(self.ram[offset]).wrapping_shl(24)
                     | u32::from(self.ram[offset + 1]).wrapping_shl(16)
                     | u32::from(self.ram[offset + 2]).wrapping_shl(8)
-                    | u32::from(self.ram[offset + 3])
+                    | u32::from(self.ram[offset + 3]),
             )
         }
     }
