@@ -11,7 +11,7 @@ programmable, windowing terminal produced in the early 1980s. It came
 out of research pioneered by Rob Pike and Bart Locanthi Jr., of AT&T
 Bell Labs.
 
-![DMD 5620 Terminal](https://static.loomcom.com/3b2/5620/dmd5620.jpg)
+![DMD 5620 Terminal](https://loomcom.com/images/pages/dmd_5620.jpg)
 
 This project implements the core logic needed to emulate a DMD 5620
 terminal, including:
