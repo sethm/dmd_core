@@ -1982,7 +1982,14 @@ impl Cpu {
         match self.dispatch(bus) {
             Ok(i) => {
                 // We should have the necessary information to trace after dispatch.
-                trace!(bus, self.steps, &format!("[{:08x}] {}", &self.r[R_PC], &self.ir));
+                trace!(
+                    bus,
+                    self.steps,
+                    &format!(
+                        "[PC={:08x} PSW={:08x} R0={:08x} R1={:08x}] {}",
+                        &self.r[R_PC], &self.r[R_PSW], &self.r[0], &self.r[1], &self.ir
+                    )
+                );
                 self.r[R_PC] = (self.r[R_PC] as i32 + i) as u32
             }
             Err(CpuError::Bus(BusError::NoDevice(_)))
