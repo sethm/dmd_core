@@ -34,12 +34,12 @@ impl Error for CpuException {
 #[derive(Debug)]
 pub enum BusError {
     Init,
-    Read(u32),
-    Write(u32),
-    NoDevice(u32),
+    Read(usize),
+    Write(usize),
+    NoDevice(usize),
     Range,
     Permission,
-    Alignment,
+    Alignment(usize),
 }
 
 impl fmt::Display for BusError {
@@ -51,7 +51,7 @@ impl fmt::Display for BusError {
             BusError::NoDevice(addr) => write!(f, "No device at address {:x}", addr),
             BusError::Range => write!(f, "Address out of range"),
             BusError::Permission => write!(f, "Invalid permission"),
-            BusError::Alignment => write!(f, "Memory Alignment"),
+            BusError::Alignment(addr) => write!(f, "Memory Alignment at address {:08x}", addr),
         }
     }
 }
@@ -65,7 +65,7 @@ impl Error for BusError {
             BusError::NoDevice(_) => None,
             BusError::Range => None,
             BusError::Permission => None,
-            BusError::Alignment => None,
+            BusError::Alignment(_) => None,
         }
     }
 }
