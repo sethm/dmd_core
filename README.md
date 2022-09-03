@@ -27,6 +27,11 @@ however.
 
 ## Changelog
 
+0.6.4: Tracing now shows correctly decoded instructions, plus raw
+       bytes decoded from instruction stream. DUART delay calculation
+       is improved. Effective address is now stored off onto
+       operands. MOVTRW support (non-MMU) added.
+
 0.6.3: Bug fixes: Video Ram starting address was not being
        updated correctly for video ram read; Implement
        `read_word` for DUART (needed to run `gebaca`)
