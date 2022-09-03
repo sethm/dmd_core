@@ -1034,7 +1034,7 @@ impl Cpu {
 
     #[allow(clippy::cognitive_complexity)]
     fn dispatch(&mut self, bus: &mut Bus) -> Result<i32, CpuError> {
-        self.steps += 1;
+        self.steps = self.steps.wrapping_add(1);
 
         // Update anything that needs updating.
         bus.service();

@@ -1,5 +1,3 @@
-#![allow(clippy::unreadable_literal)]
-
 use crate::bus::AccessCode;
 use crate::bus::Device;
 use crate::err::BusError;
@@ -19,17 +17,11 @@ const ADDRESS_RANGE: Range<usize> = START_ADDR..END_ADDR;
 // Vertical blanks should occur at 60Hz. This value is in nanoseconds
 const VERTICAL_BLANK_DELAY: u32 = 16_666_666; // 60 Hz
 
-// Delay rates, in nanoseconds, selected when ACR[7] = 0
-const DELAY_RATES_A: [u32; 13] = [
-    160000000, 72727272, 59259260, 40000000, 26666668, 13333334, 6666667, 7619047, 3333333,
-    1666666, 1111111, 833333, 208333,
-];
+const BAUD_RATES_A: [u32; 13] =
+    [50, 110, 135, 200, 300, 600, 1200, 1050, 2400, 4800, 7200, 9600, 38400];
 
-// Delay rates, in nanoseconds, selected when ACR[7] = 1
-const DELAY_RATES_B: [u32; 13] = [
-    106666672, 72727272, 59259260, 53333336, 26666668, 13333334, 6666667, 4000000, 3333333,
-    1666666, 4444444, 833333, 416666,
-];
+const BAUD_RATES_B: [u32; 13] =
+    [75, 110, 135, 150, 300, 600, 1200, 2000, 2400, 4800, 1800, 9600, 19200];
 
 const PORT_0: usize = 0;
 const PORT_1: usize = 1;
@@ -146,6 +138,21 @@ impl Default for Duart {
     fn default() -> Self {
         Duart::new()
     }
+}
+
+/// Compute the delay rate to wait for the next transmit or receive
+fn delay_rate(csr_bits: u8, acr_bits: u8) -> u32 {
+    const NS_PER_SEC: u32 = 1_100_000_000;
+    const BITS_PER_CHAR: u32 = 7;
+
+    let baud_bits: usize = ((csr_bits >> 4) & 0xf) as usize;
+    let baud_rate = if acr_bits & 0x80 == 0 {
+        BAUD_RATES_A[baud_bits]
+    } else {
+        BAUD_RATES_B[baud_bits]
+    };
+
+    NS_PER_SEC / (baud_rate / BITS_PER_CHAR)
 }
 
 impl Duart {
@@ -476,15 +483,8 @@ impl Device for Duart {
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
             }
             CSRA => {
-                // Set the baud rate.
-                let baud_bits: usize = ((val >> 4) & 0xf) as usize;
-                let delay = if self.acr & 0x80 == 0 {
-                    DELAY_RATES_A[baud_bits]
-                } else {
-                    DELAY_RATES_B[baud_bits]
-                };
                 let mut ctx = &mut self.ports[PORT_0];
-                ctx.char_delay = Duration::new(0, delay);
+                ctx.char_delay = Duration::new(0, delay_rate(val, self.acr));
             }
             CRA => {
                 self.handle_command(val, PORT_0);
