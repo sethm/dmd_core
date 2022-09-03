@@ -196,6 +196,17 @@ pub unsafe fn dmd_trace_on(file_name: *const c_char) -> c_int {
 }
 
 #[no_mangle]
+pub fn dmd_trace_off() -> c_int {
+    match DMD.lock() {
+        Ok(mut dmd) => {
+            dmd.trace_off();
+            SUCCESS
+        }
+        Err(_) => ERROR,
+    }
+}
+
+#[no_mangle]
 fn dmd_step_loop(steps: usize) -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {

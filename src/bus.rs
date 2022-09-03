@@ -104,7 +104,7 @@ impl Bus {
             return Ok(&mut self.ram);
         }
 
-        Err(BusError::NoDevice(address as u32))
+        Err(BusError::NoDevice(address))
     }
 
     pub fn trace_on(&mut self, name: &str) -> std::io::Result<()> {
@@ -134,14 +134,14 @@ impl Bus {
 
     pub fn read_half(&mut self, address: usize, access: AccessCode) -> Result<u16, BusError> {
         if address & 1 != 0 {
-            return Err(BusError::Alignment);
+            return Err(BusError::Alignment(address));
         }
         self.get_device(address)?.read_half(address, access)
     }
 
     pub fn read_word(&mut self, address: usize, access: AccessCode) -> Result<u32, BusError> {
         if address & 3 != 0 {
-            return Err(BusError::Alignment);
+            return Err(BusError::Alignment(address));
         }
         self.get_device(address)?.read_word(address, access)
     }
@@ -168,14 +168,14 @@ impl Bus {
 
     pub fn write_half(&mut self, address: usize, val: u16) -> Result<(), BusError> {
         if address & 1 != 0 {
-            return Err(BusError::Alignment);
+            return Err(BusError::Alignment(address));
         }
         self.get_device(address)?.write_half(address, val, AccessCode::Write)
     }
 
     pub fn write_word(&mut self, address: usize, val: u32) -> Result<(), BusError> {
         if address & 3 != 0 {
-            return Err(BusError::Alignment);
+            return Err(BusError::Alignment(address));
         }
         self.get_device(address)?.write_word(address, val, AccessCode::Write)
     }

@@ -51,7 +51,7 @@ impl Device for Mouse {
         match address - START_ADDRESS {
             0 => Ok(self.y),
             2 => Ok(self.x),
-            _ => Err(BusError::NoDevice(address as u32)),
+            _ => Err(BusError::NoDevice(address)),
         }
     }
 

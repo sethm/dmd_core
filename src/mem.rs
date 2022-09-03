@@ -99,7 +99,7 @@ impl Device for Mem {
     /// Write to memory at the specified absolute address.
     fn write_byte(&mut self, address: usize, val: u8, _: AccessCode) -> Result<(), BusError> {
         if self.is_read_only {
-            return Err(BusError::Write(address as u32));
+            return Err(BusError::Write(address));
         }
 
         let offset = address.wrapping_sub(self.address_range().start);
@@ -114,7 +114,7 @@ impl Device for Mem {
 
     fn write_half(&mut self, address: usize, val: u16, _: AccessCode) -> Result<(), BusError> {
         if self.is_read_only {
-            return Err(BusError::Write(address as u32));
+            return Err(BusError::Write(address));
         }
 
         let offset = address.wrapping_sub(self.address_range().start);
@@ -130,7 +130,7 @@ impl Device for Mem {
 
     fn write_word(&mut self, address: usize, val: u32, _: AccessCode) -> Result<(), BusError> {
         if self.is_read_only {
-            return Err(BusError::Write(address as u32));
+            return Err(BusError::Write(address));
         }
 
         let offset = address.wrapping_sub(self.address_range().start);
