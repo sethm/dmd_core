@@ -89,7 +89,7 @@ struct Port {
     stat: u8,
     conf: u8,
     rx_data: u8,
-    tx_data: u8,
+    tx_data: Option<u8>,
     mode_ptr: usize,
     rx_queue: VecDeque<u8>,
     tx_queue: VecDeque<u8>,
@@ -105,7 +105,7 @@ impl Port {
             stat: 0,
             conf: 0,
             rx_data: 0,
-            tx_data: 0,
+            tx_data: None,
             mode_ptr: 0,
             rx_queue: VecDeque::new(),
             tx_queue: VecDeque::new(),
@@ -217,28 +217,29 @@ impl Duart {
             _ => (ISTS_TBI, ISTS_RBI),
         };
 
-        if (ctx.conf & CNF_ETX) != 0
-            && (ctx.stat & STS_TXR) == 0
-            && (ctx.stat & STS_TXE) == 0
-            && Instant::now() >= ctx.next_tx
-        {
-            let c = ctx.tx_data;
-            ctx.stat |= STS_TXR;
-            ctx.stat |= STS_TXE;
-            self.istat |= tx_istat;
-            // Only RS232 transmit generates an interrupt.
-            if port == 0 {
-                self.ivec |= TX_INT;
-            }
-            if (ctx.mode[1] >> 6) & 3 == 0x2 {
-                // Loopback Mode.
-                ctx.rx_data = c;
-                ctx.stat |= STS_RXR;
-                self.istat |= rx_istat;
-                self.ivec |= RX_INT;
-            } else {
-                ctx.tx_queue.push_front(c);
-            }
+        match ctx.tx_data {
+            Some(c) => if Instant::now() >= ctx.next_tx {
+                    if (ctx.conf & CNF_ETX) != 0 {
+                        ctx.stat |= STS_TXR;
+                        ctx.stat |= STS_TXE;
+                    }
+                    self.istat |= tx_istat;
+                    // Only RS232 transmit generates an interrupt.
+                    if port == 0 {
+                        self.ivec |= TX_INT;
+                    }
+                    if (ctx.mode[1] >> 6) & 3 == 0x2 {
+                        // Loopback Mode.
+                        ctx.rx_data = c;
+                        ctx.stat |= STS_RXR;
+                        self.istat |= rx_istat;
+                        self.ivec |= RX_INT;
+                    } else {
+                        ctx.tx_queue.push_front(c);
+                    }
+                    ctx.tx_data = None;
+                },
+            _ => (),
         }
     }
 
@@ -361,8 +362,10 @@ impl Duart {
             }
         } else if cmd & CMD_ETX != 0 {
             ctx.conf |= CNF_ETX;
-            ctx.stat |= STS_TXR;
-            ctx.stat |= STS_TXE;
+            if ctx.tx_data.is_none() {
+                ctx.stat |= STS_TXR;
+                ctx.stat |= STS_TXE;
+            }
             if port == PORT_0 {
                 self.istat |= ISTS_TAI;
                 self.ivec |= TX_INT;
@@ -491,7 +494,7 @@ impl Device for Duart {
             }
             THRA => {
                 let mut ctx = &mut self.ports[PORT_0];
-                ctx.tx_data = val;
+                ctx.tx_data = Some(val);
                 // Update state. Since we're transmitting, the
                 // transmitter buffer is not empty.  The actual
                 // transmit will happen in the 'service' function.
@@ -526,7 +529,7 @@ impl Device for Duart {
                 let mut ctx = &mut self.ports[PORT_1];
 
                 if (val & 0x08) != 0 {
-                    ctx.tx_data = val;
+                    ctx.tx_data = Some(val);
                     ctx.next_tx = Instant::now() + ctx.char_delay;
                     ctx.stat &= !(STS_TXE | STS_TXR);
                     self.istat &= !ISTS_TBI;
