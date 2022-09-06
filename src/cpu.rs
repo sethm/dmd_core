@@ -3,6 +3,8 @@
 use crate::bus::{AccessCode, Bus};
 use crate::err::*;
 use crate::instr::*;
+
+use log::{debug, trace};
 use std::fmt;
 
 ///
@@ -47,14 +49,6 @@ const IPL_TABLE: [u32; 64] = [
 
 const WE32100_VERSION: u32 = 0x1a;
 const HALFWORD_MNEMONIC_COUNT: usize = 11;
-
-macro_rules! trace {
-    ($bus:ident, $steps:expr, $msg:expr) => {
-        if ($bus.trace_enabled()) {
-            $bus.trace($steps, $msg)
-        }
-    };
-}
 
 pub enum ExceptionType {
     ExternalMemory,
@@ -640,7 +634,6 @@ pub struct Cpu {
     //
     pub r: [u32; 16],
     error_context: ErrorContext,
-    steps: u64,
     ir: Instruction,
 }
 
@@ -655,7 +648,6 @@ impl Cpu {
         Cpu {
             r: [0; 16],
             error_context: ErrorContext::None,
-            steps: 0,
             ir: Instruction {
                 opcode: 0,
                 name: "???",
@@ -1034,18 +1026,17 @@ impl Cpu {
 
     #[allow(clippy::cognitive_complexity)]
     fn dispatch(&mut self, bus: &mut Bus) -> Result<i32, CpuError> {
-        self.steps = self.steps.wrapping_add(1);
-
         // Update anything that needs updating.
         bus.service();
 
         if let Some(val) = bus.get_interrupts() {
             let cpu_ipl = (self.r[R_PSW]) >> 13 & 0xf;
             if cpu_ipl < IPL_TABLE[(val & 0x3f) as usize] {
-                trace!(
-                    bus,
-                    self.steps,
-                    &format!("[{:08x}] INTERRUPT 0x{:x}", &self.r[R_PC], (!val) & 0x3f)
+                debug!(
+                    "[PC={:08x} PSW={:08x}] INTERRUPT 0x{:04x}",
+                    &self.r[R_PC],
+                    &self.r[R_PSW],
+                    (!val) & 0x3f
                 );
                 self.on_interrupt(bus, (!val) & 0x3f);
             }
@@ -2011,11 +2002,7 @@ impl Cpu {
         match self.dispatch(bus) {
             Ok(i) => {
                 // We should have the necessary information to trace after dispatch.
-                trace!(
-                    bus,
-                    self.steps,
-                    &format!("[PC={:08x} PSW={:08x}] {}", &self.r[R_PC], &self.r[R_PSW], &self.ir)
-                );
+                trace!("[PC={:08x} PSW={:08x}] {}", &self.r[R_PC], &self.r[R_PSW], &self.ir);
                 self.r[R_PC] = (self.r[R_PC] as i32 + i) as u32
             }
             Err(CpuError::Bus(BusError::NoDevice(_)))
@@ -2526,11 +2513,11 @@ impl Cpu {
             }
             Data::Half | Data::UHalf => {
                 self.set_n_flag((val & 0x8000) != 0);
-                self.set_z_flag(val.trailing_zeros() >= 16);
+                self.set_z_flag(val as u16 == 0);
             }
             Data::Byte | Data::SByte => {
                 self.set_n_flag((val & 0x80) != 0);
-                self.set_z_flag(val.trailing_zeros() >= 8);
+                self.set_z_flag(val as u8 == 0);
             }
             Data::None => {
                 // Intentionally ignored
@@ -2649,10 +2636,6 @@ impl Cpu {
 
     pub fn get_psw(&self) -> u32 {
         self.r[R_PSW]
-    }
-
-    pub fn get_steps(&self) -> u64 {
-        self.steps
     }
 }
 

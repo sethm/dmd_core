@@ -5,6 +5,8 @@ use crate::bus::Device;
 use crate::err::BusError;
 use std::ops::Range;
 
+use log::debug;
+
 const START_ADDRESS: usize = 0x400000;
 const END_ADDRESS: usize = 0x4000004;
 const ADDRESS_RANGE: Range<usize> = START_ADDRESS..END_ADDRESS;
@@ -48,6 +50,7 @@ impl Device for Mouse {
     }
 
     fn read_half(&mut self, address: usize, _access: AccessCode) -> Result<u16, BusError> {
+        debug!("Mouse Read, address={:08x}", address);
         match address - START_ADDRESS {
             0 => Ok(self.y),
             2 => Ok(self.x),

@@ -4,9 +4,9 @@ use crate::duart::Duart;
 use crate::err::BusError;
 use crate::mem::Mem;
 use crate::mouse::Mouse;
-use std::io::Write;
-use std::{fmt::Debug, fs::OpenOptions};
-use std::{fs::File, ops::Range};
+
+use std::fmt::Debug;
+use std::ops::Range;
 
 const NVRAM_SIZE: usize = 8192;
 
@@ -63,7 +63,6 @@ pub struct Bus {
     vid: Mem,   // TODO: Figure out what device this really is
     bbram: Mem, // TODO: change to BBRAM when implemented
     ram: Mem,
-    trace_log: Option<File>,
 }
 
 impl Bus {
@@ -75,7 +74,6 @@ impl Bus {
             vid: Mem::new(0x500000, 0x2, false),
             bbram: Mem::new(0x600000, 0x2000, false),
             ram: Mem::new(0x700000, mem_size, false),
-            trace_log: None,
         }
     }
 
@@ -105,27 +103,6 @@ impl Bus {
         }
 
         Err(BusError::NoDevice(address))
-    }
-
-    pub fn trace_on(&mut self, name: &str) -> std::io::Result<()> {
-        let mut out = OpenOptions::new().create(true).write(true).open(name)?;
-        writeln!(out, "TRACE START")?;
-        self.trace_log = Some(out);
-        Ok(())
-    }
-
-    pub fn trace_enabled(&self) -> bool {
-        self.trace_log.is_some()
-    }
-
-    pub fn trace_off(&mut self) {
-        self.trace_log = None;
-    }
-
-    pub fn trace(&mut self, step: u64, line: &str) {
-        if let Some(trace_log) = &mut self.trace_log {
-            let _ = writeln!(trace_log, "{:08}: {}", step, line);
-        }
     }
 
     pub fn read_byte(&mut self, address: usize, access: AccessCode) -> Result<u8, BusError> {
@@ -212,20 +189,20 @@ impl Bus {
         self.duart.mouse_up(button);
     }
 
-    pub fn rs232_tx_poll(&mut self) -> Option<u8> {
-        self.duart.rs232_tx_poll()
+    pub fn rs232_tx(&mut self) -> Option<u8> {
+        self.duart.rs232_tx()
     }
 
-    pub fn kb_tx_poll(&mut self) -> Option<u8> {
-        self.duart.kb_tx_poll()
+    pub fn keyboard_tx(&mut self) -> Option<u8> {
+        self.duart.keyboard_tx()
     }
 
-    pub fn rx_char(&mut self, char: u8) {
-        self.duart.rx_char(char);
+    pub fn rs232_rx(&mut self, c: u8) {
+        self.duart.rs232_rx(c);
     }
 
-    pub fn rx_keyboard(&mut self, keycode: u8) {
-        self.duart.rx_keyboard(keycode);
+    pub fn keyboard_rx(&mut self, keycode: u8) {
+        self.duart.keyboard_rx(keycode);
     }
 
     pub fn duart_output(&self) -> u8 {

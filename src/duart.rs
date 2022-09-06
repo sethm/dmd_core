@@ -1,7 +1,47 @@
-use crate::bus::AccessCode;
-use crate::bus::Device;
+/// The 2681 DUART has two I/O UARTs, each one represented by the
+/// `Port` struct. The first is used only for the EIA RS232 serial
+/// port. The second is duplexed between keyboard I/O and a write-only
+/// parallel printer port.
+///
+/// Each of the two UARTs simulates the following hardware registers:
+///
+///   - Two MODE registers, duplexed at the same PIO address, with a
+///     pointer that auto-increments on write.
+///
+///   - One STATUS register.
+///
+///   - One CONFIGURATION register.
+///
+///   - One RECEIVE FIFO with 3 slots. Reading from PIO reads from this
+///     FIFO.
+///
+///   - One RECEIVE shift register that holds bits as they come in,
+///     before they are pushed onto the FIFO.
+///
+///   - One TRANSMIT holding register. Writing to PIO writes to this
+///     register.
+///
+///   - One TRANSMIT shift register that latches the data from the
+///     holding register and shifts them out onto the serial line.
+///
+/// In addition to simulating these hardware registers, this
+/// implementation has a TX queue and an RX queue. These queues do not
+/// exist in hardware.  They are used to buffer data sent and received
+/// by users of this library for maximum flexibility, since polling for
+/// I/O may take place at any unknown rate. The simulated UART will
+/// poll the RX queue whenever the RX FIFO is not full. It will push
+/// data onto the TX queue as soon as possible after it has been moved
+/// into the TX shift register.
+///
+/// The 2681 DUART is well documented in its datasheet.
+///
+use crate::bus::{AccessCode, Device};
 use crate::err::BusError;
 
+use log::debug;
+use ringbuffer::{
+    ConstGenericRingBuffer, RingBuffer, RingBufferExt, RingBufferRead, RingBufferWrite,
+};
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt::Error;
@@ -46,21 +86,23 @@ const OPBITS_RESET: u8 = 0x3f;
 //
 // Port Configuration Bits
 //
-const CNF_ETX: u8 = 0x01;
-const CNF_ERX: u8 = 0x02;
+const CNF_ETX: u8 = 0x01; // TX Enabled
+const CNF_ERX: u8 = 0x02; // RX Enabled
 
 //
 // Status Flags
 //
-const STS_RXR: u8 = 0x01;
-const STS_TXR: u8 = 0x04;
-const STS_TXE: u8 = 0x08;
-const STS_OER: u8 = 0x10;
-const STS_PER: u8 = 0x20;
-const STS_FER: u8 = 0x40;
+const STS_RXR: u8 = 0x01; // Rx Ready
+const STS_FFL: u8 = 0x02; // FIFO Full
+const STS_TXR: u8 = 0x04; // Tx Ready
+const STS_TXE: u8 = 0x08; // Tx Register Empty
+const STS_OER: u8 = 0x10; // Overflow Error
+const STS_PER: u8 = 0x20; // Parity Error
+const STS_FER: u8 = 0x40; // Framing Error
+const STS_RXB: u8 = 0x80; // Received Break
 
 //
-// Commands
+// Command Register Commands
 //
 const CMD_ERX: u8 = 0x01;
 const CMD_DRX: u8 = 0x02;
@@ -68,57 +110,245 @@ const CMD_ETX: u8 = 0x04;
 const CMD_DTX: u8 = 0x08;
 
 //
-// Interrupt Status Register
+// Control Register Commands
 //
-const ISTS_TAI: u8 = 0x01;
-const ISTS_RAI: u8 = 0x02;
-const ISTS_TBI: u8 = 0x10;
-const ISTS_RBI: u8 = 0x20;
-const ISTS_IPC: u8 = 0x80;
+const CR_RST_MR: u8 = 0x01;
+const CR_RST_RX: u8 = 0x02;
+const CR_RST_TX: u8 = 0x03;
+const CR_RST_ERR: u8 = 0x04;
+const CR_RST_BRK: u8 = 0x05;
+const CR_START_BRK: u8 = 0x06;
+const CR_STOP_BRK: u8 = 0x07;
 
 //
-// Interrupt Masks
+// Interrupt Status Register
+//
+const ISTS_TAI: u8 = 0x01; // Transmitter A Ready Interrupt
+const ISTS_RAI: u8 = 0x02; // Receiver A Ready Interrupt
+const ISTS_DBA: u8 = 0x04; // Delta Break A
+const ISTS_TBI: u8 = 0x10; // Transmitter B Ready Interrupt
+const ISTS_RBI: u8 = 0x20; // Receiver B Ready Interrupt
+const ISTS_DBB: u8 = 0x40; // Delta Break B
+const ISTS_IPC: u8 = 0x80; // Interrupt Port Change
+
+//
+// CPU Interrupt Vectors.
 //
 const KEYBOARD_INT: u8 = 0x04;
 const MOUSE_BLANK_INT: u8 = 0x02;
 const TX_INT: u8 = 0x10;
 const RX_INT: u8 = 0x20;
 
+// NB: The terrible Ring Buffer library requries capacities with a
+// power of 2, so we have to have extra logic to deal with this!
+//
+// TODO: Pick a new ring buffer library or just implement our own
+// 3-slot FIFO.
+const RX_FIFO_LEN: usize = 3;
+const RX_FIFO_INIT_LEN: usize = 4;
+
 struct Port {
+    // Mode, Status, and Configuration registers
     mode: [u8; 2],
+    mode_ptr: usize,
     stat: u8,
     conf: u8,
-    rx_data: u8,
-    tx_data: Option<u8>,
-    mode_ptr: usize,
-    rx_queue: VecDeque<u8>,
-    tx_queue: VecDeque<u8>,
+    // State used by the RX and TX state machines.
+    rx_fifo: ConstGenericRingBuffer<u8, RX_FIFO_INIT_LEN>,
+    rx_shift_reg: Option<u8>,
+    tx_holding_reg: Option<u8>,
+    tx_shift_reg: Option<u8>,
+    // Buffers to hold TX and RX characters so that they can be
+    // processed by the user of this library in chunks.
+    rx_deque: VecDeque<u8>,
+    tx_deque: VecDeque<u8>,
+    // Service timing info
     char_delay: Duration,
-    next_rx: Instant,
-    next_tx: Instant,
+    next_tx_service: Instant,
+    next_rx_service: Instant,
 }
 
 impl Port {
     fn new() -> Port {
         Port {
             mode: [0; 2],
+            mode_ptr: 0,
             stat: 0,
             conf: 0,
-            rx_data: 0,
-            tx_data: None,
-            mode_ptr: 0,
-            rx_queue: VecDeque::new(),
-            tx_queue: VecDeque::new(),
+            rx_fifo: ConstGenericRingBuffer::<u8, RX_FIFO_INIT_LEN>::new(),
+            rx_shift_reg: None,
+            tx_holding_reg: None,
+            tx_shift_reg: None,
+            rx_deque: VecDeque::new(),
+            tx_deque: VecDeque::new(),
             char_delay: Duration::new(0, 1_000_000),
-            next_rx: Instant::now(),
-            next_tx: Instant::now(),
+            next_tx_service: Instant::now(),
+            next_rx_service: Instant::now(),
         }
     }
-}
 
-impl Default for Port {
-    fn default() -> Self {
-        Port::new()
+    /// Read a single character out of the RX channel.
+    ///
+    /// The character is read out of the FIFO, which is drained of one
+    /// slot. If a character is currently in the shift register, it is
+    /// moved into the FIFO now that there is room.
+    fn rx_read_char(&mut self) -> Option<u8> {
+        if self.rx_enabled() {
+            let val = self.rx_fifo.dequeue();
+
+            // The FIFO is no longer full (even if only temporarily)
+            self.stat &= !STS_FFL;
+
+            // If the RX shift register held a character, it's time
+            // to move it into the FIFO.
+            if let Some(c) = self.rx_shift_reg {
+                self.rx_fifo.push(c);
+                self.stat |= STS_RXR;
+                if self.rx_fifo.len() >= RX_FIFO_LEN {
+                    self.stat |= STS_FFL;
+                }
+            }
+
+            // If the FIFO is now empty, mark it as such.
+            if self.rx_fifo.is_empty() {
+                self.stat &= !STS_RXR;
+            }
+
+            // Reset Parity Error and Received Break on read
+            self.stat &= !(STS_PER | STS_RXB);
+
+            val
+        } else {
+            None
+        }
+    }
+
+    /// Receiver a single character.
+    ///
+    /// If there is room in the FIFO, the character is immediately
+    /// stored there. If not, it is stored in the shift register until
+    /// room becomes available. The shift register is overwitten if a
+    /// new character is received while the FIFO is full.
+    fn rx_char(&mut self, c: u8) {
+        debug!("rx_char: {:02x}", c);
+        if self.rx_fifo.len() < RX_FIFO_LEN {
+            self.rx_fifo.push(c);
+            if self.rx_fifo.len() >= RX_FIFO_LEN {
+                debug!("FIFO FULL.");
+                self.stat |= STS_FFL;
+            }
+        } else {
+            // The FIFO is full, and now we're going to have to
+            // hold a character in the shift register until space
+            // is available.
+            //
+            // If the register already had data, it's going to be
+            // overwritten, so we have to set the overflow flag.
+            if self.rx_shift_reg.is_some() {
+                self.stat |= STS_OER;
+            }
+
+            self.rx_shift_reg = Some(c);
+        }
+
+        // In either case, RxRDY is now true.
+        self.stat |= STS_RXR;
+    }
+
+    /// Move the receiver state machine
+    fn rx_service(&mut self) {
+        let rx_service_needed = self.rx_enabled()
+            && !self.rx_deque.is_empty()
+            && Instant::now() >= self.next_rx_service;
+
+        if !rx_service_needed {
+            // Nothing to do.
+            return;
+        }
+
+        if !self.loopback() {
+            if let Some(c) = self.rx_deque.pop_back() {
+                self.rx_char(c);
+            }
+        }
+
+        self.next_rx_service = Instant::now() + self.char_delay;
+    }
+
+    /// Move the transmitter state machine.
+    fn tx_service(&mut self, keyboard: bool) {
+        let tx_service_needed = self.tx_enabled()
+            && (self.tx_holding_reg.is_some() || self.tx_shift_reg.is_some())
+            && Instant::now() >= self.next_tx_service;
+
+        if !tx_service_needed {
+            // Nothing to do
+            return;
+        }
+
+        // Check for data in the transmitter shift register that's
+        // ready to go out to the RS232 output buffer
+        if let Some(c) = self.tx_shift_reg {
+            debug!("RS232 TX: {:02x}", c);
+            if self.loopback() {
+                debug!("RS232 TX: Port is in loopback.");
+                self.rx_char(c);
+            } else {
+                if keyboard && c == 0x02 {
+                    self.stat |= STS_PER;
+                }
+                self.tx_deque.push_front(c);
+            }
+
+            self.tx_shift_reg = None;
+            self.stat |= STS_TXR | STS_TXE;
+        }
+
+        // Check for data in the transmitter holding register that's
+        // ready to go out to the transmitter shift register.
+        if let Some(c) = self.tx_holding_reg {
+            self.tx_shift_reg = Some(c);
+            // Clear the holding register
+            self.tx_holding_reg = None;
+            self.next_tx_service = Instant::now() + self.char_delay;
+        }
+    }
+
+    fn loopback(&self) -> bool {
+        (self.mode[1] & 0xc0) == 0x80
+    }
+
+    fn tx_enabled(&self) -> bool {
+        (self.conf & CNF_ETX) != 0
+    }
+
+    fn rx_enabled(&self) -> bool {
+        (self.conf & CNF_ERX) != 0
+    }
+
+    fn enable_tx(&mut self) {
+        self.conf |= CNF_ETX;
+        if self.tx_holding_reg.is_none() {
+            self.stat |= STS_TXR;
+            self.stat |= STS_TXE;
+        }
+    }
+
+    fn disable_tx(&mut self) {
+        self.conf &= !CNF_ETX;
+        self.stat &= !(STS_TXR | STS_TXE);
+        self.next_rx_service = Instant::now() + Duration::new(0, 10_000_000);
+    }
+
+    fn enable_rx(&mut self) {
+        self.conf |= CNF_ERX;
+        self.stat &= !STS_RXR;
+        self.next_rx_service = Instant::now() + Duration::new(0, 10_000_000);
+    }
+
+    fn disable_rx(&mut self) {
+        self.conf &= !CNF_ERX;
+        self.stat &= !STS_RXR;
     }
 }
 
@@ -128,8 +358,11 @@ pub struct Duart {
     ipcr: u8,
     inprt: u8,
     outprt: u8,
-    istat: u8,
+    isr: u8,
     imr: u8,
+    // TODO: Interrupts are set manually by tweaking this vector,
+    // which doesn't actually exist on the real duart. We should fix
+    // that, because DAMN.
     ivec: u8,
     next_vblank: Instant,
 }
@@ -163,7 +396,7 @@ impl Duart {
             ipcr: 0x40,
             inprt: 0xb,
             outprt: 0,
-            istat: 0,
+            isr: 0,
             imr: 0,
             ivec: 0,
             next_vblank: Instant::now() + Duration::new(0, VERTICAL_BLANK_DELAY),
@@ -176,6 +409,22 @@ impl Duart {
             self.vertical_blank();
         }
 
+        // Mask in keyboard and RS232 RX interrupts
+        if (self.ports[PORT_0].stat & STS_RXR) != 0 {
+            self.ivec |= RX_INT;
+            self.isr |= ISTS_RAI;
+        }
+
+        if (self.ports[PORT_1].stat & STS_RXR) != 0 {
+            self.ivec |= KEYBOARD_INT;
+            self.isr |= ISTS_RBI;
+        }
+
+        if (self.ports[PORT_0].stat & STS_TXR) != 0 {
+            self.ivec |= TX_INT;
+            self.isr |= ISTS_TAI;
+        }
+
         let val = self.ivec;
 
         if val == 0 {
@@ -185,83 +434,17 @@ impl Duart {
         }
     }
 
-    fn handle_rx(&mut self, port: usize) {
-        let mut ctx = &mut self.ports[port];
-
-        let (istat, ivec) = match port {
-            0 => (ISTS_RAI, RX_INT),
-            _ => (ISTS_RBI, KEYBOARD_INT),
-        };
-
-        if !ctx.rx_queue.is_empty() && Instant::now() >= ctx.next_rx {
-            if let Some(c) = ctx.rx_queue.pop_back() {
-                if ctx.conf & CNF_ERX != 0 {
-                    ctx.rx_data = c;
-                    ctx.stat |= STS_RXR;
-                    self.istat |= istat;
-                    self.ivec |= ivec;
-                }
-            }
-
-            if !ctx.rx_queue.is_empty() {
-                ctx.next_rx = Instant::now() + ctx.char_delay;
-            }
-        }
-    }
-
-    fn handle_tx(&mut self, port: usize) {
-        let mut ctx = &mut self.ports[port];
-
-        let (tx_istat, rx_istat) = match port {
-            0 => (ISTS_TAI, ISTS_RAI),
-            _ => (ISTS_TBI, ISTS_RBI),
-        };
-
-        match ctx.tx_data {
-            Some(c) => if Instant::now() >= ctx.next_tx {
-                    if (ctx.conf & CNF_ETX) != 0 {
-                        ctx.stat |= STS_TXR;
-                        ctx.stat |= STS_TXE;
-                    }
-                    self.istat |= tx_istat;
-                    // Only RS232 transmit generates an interrupt.
-                    if port == 0 {
-                        self.ivec |= TX_INT;
-                    }
-                    if (ctx.mode[1] >> 6) & 3 == 0x2 {
-                        // Loopback Mode.
-                        ctx.rx_data = c;
-                        ctx.stat |= STS_RXR;
-                        self.istat |= rx_istat;
-                        self.ivec |= RX_INT;
-                    } else {
-                        ctx.tx_queue.push_front(c);
-                    }
-                    ctx.tx_data = None;
-                },
-            _ => (),
-        }
-    }
-
     pub fn service(&mut self) {
-        // Deal with RS-232 Transmit
-        self.handle_tx(PORT_0);
-
-        // Deal with RS-232 Receive
-        self.handle_rx(PORT_0);
-
-        // Deal with Keyboard Transmit
-        // (note: This is used only for keyboard beeps!)
-        self.handle_tx(PORT_1);
-
-        // Deal with Keyboard Receive
-        self.handle_rx(PORT_1);
+        self.ports[PORT_0].tx_service(false);
+        self.ports[PORT_0].rx_service();
+        self.ports[PORT_1].tx_service(true);
+        self.ports[PORT_1].rx_service();
     }
 
     pub fn vertical_blank(&mut self) {
         self.ivec |= MOUSE_BLANK_INT;
         self.ipcr |= 0x40;
-        self.istat |= ISTS_IPC;
+        self.isr |= ISTS_IPC;
 
         if self.inprt & 0x04 == 0 {
             self.ipcr |= 0x40;
@@ -275,18 +458,28 @@ impl Duart {
         !self.outprt
     }
 
-    pub fn rs232_tx_poll(&mut self) -> Option<u8> {
-        self.ports[PORT_0].tx_queue.pop_back()
+    /// Queue a single character for processing by the rs232 port.
+    pub fn rs232_rx(&mut self, c: u8) {
+        self.ports[PORT_0].rx_deque.push_front(c);
     }
 
-    pub fn kb_tx_poll(&mut self) -> Option<u8> {
-        self.ports[PORT_1].tx_queue.pop_back()
+    /// Queue a single character for processing by the keyboard port
+    pub fn keyboard_rx(&mut self, c: u8) {
+        self.ports[PORT_1].rx_deque.push_front(c);
+    }
+
+    pub fn rs232_tx(&mut self) -> Option<u8> {
+        self.ports[PORT_0].tx_deque.pop_back()
+    }
+
+    pub fn keyboard_tx(&mut self) -> Option<u8> {
+        self.ports[PORT_1].tx_deque.pop_back()
     }
 
     pub fn mouse_down(&mut self, button: u8) {
         self.ipcr = 0;
         self.inprt |= 0xb;
-        self.istat |= ISTS_IPC;
+        self.isr |= ISTS_IPC;
         self.ivec |= MOUSE_BLANK_INT;
         match button {
             0 => {
@@ -308,7 +501,7 @@ impl Duart {
     pub fn mouse_up(&mut self, button: u8) {
         self.ipcr = 0;
         self.inprt |= 0xb;
-        self.istat |= ISTS_IPC;
+        self.isr |= ISTS_IPC;
         self.ivec |= MOUSE_BLANK_INT;
         match button {
             0 => {
@@ -324,83 +517,104 @@ impl Duart {
         }
     }
 
-    pub fn rx_keyboard(&mut self, c: u8) {
-        let mut ctx = &mut self.ports[PORT_1];
+    fn handle_command(&mut self, cmd: u8, port_no: usize) {
+        let mut port = &mut self.ports[port_no];
 
-        if ctx.rx_queue.is_empty() {
-            ctx.next_rx = Instant::now() + ctx.char_delay;
-        }
+        let (tx_ists, rx_ists, dbk_ists) = match port_no {
+            PORT_0 => (ISTS_TAI, ISTS_RAI, ISTS_DBA),
+            _ => (ISTS_TBI, ISTS_RBI, ISTS_DBB),
+        };
 
-        ctx.rx_queue.push_front(c);
-    }
-
-    pub fn rx_char(&mut self, c: u8) {
-        let mut ctx = &mut self.ports[PORT_0];
-
-        if ctx.rx_queue.is_empty() {
-            ctx.next_rx = Instant::now() + ctx.char_delay;
-        }
-
-        ctx.rx_queue.push_front(c);
-    }
-
-    pub fn handle_command(&mut self, cmd: u8, port: usize) {
-        if cmd == 0 {
-            return;
-        }
-
-        let mut ctx = &mut self.ports[port];
-
-        // Enable or disable transmitter
+        // Enable or disable transmitter. Disable always wins if both
+        // are set.
         if cmd & CMD_DTX != 0 {
-            ctx.conf &= !CNF_ETX;
-            ctx.stat &= !STS_TXR;
-            ctx.stat &= !STS_TXE;
-            if port == PORT_0 {
-                self.ivec &= !TX_INT;
-                self.istat &= !ISTS_TAI;
-            }
+            debug!("Command: Disable TX");
+            port.disable_tx();
+            self.ivec &= !TX_INT; // XXX: Rethink interrupt vector setting.
+            self.isr &= !tx_ists;
         } else if cmd & CMD_ETX != 0 {
-            ctx.conf |= CNF_ETX;
-            if ctx.tx_data.is_none() {
-                ctx.stat |= STS_TXR;
-                ctx.stat |= STS_TXE;
-            }
-            if port == PORT_0 {
-                self.istat |= ISTS_TAI;
-                self.ivec |= TX_INT;
-            }
+            debug!("Command: Enable TX");
+            port.enable_tx();
+            self.ivec |= TX_INT; // XXX: Rethink interrupt vector setting
+            self.isr |= tx_ists;
         }
 
-        // Enable or disable receiver
+        // Enable or disable receiver. Disable always wins, if both are set.
         if cmd & CMD_DRX != 0 {
-            ctx.conf &= !CNF_ERX;
-            ctx.stat &= !STS_RXR;
-            if port == PORT_0 {
-                self.ivec &= !RX_INT;
-                self.istat &= !ISTS_RAI;
+            debug!("Command: Disable RX");
+            port.disable_rx();
+            self.isr &= !rx_ists;
+            if port_no == PORT_0 {
+                self.ivec &= !RX_INT; // XXX: Rethink interrupt vector setting
+                self.isr &= !ISTS_RAI;
             } else {
-                self.ivec &= !KEYBOARD_INT;
-                self.istat &= !ISTS_RBI;
+                self.ivec &= !KEYBOARD_INT; // XXX: Rethink interrupt vector setting
+                self.isr &= !ISTS_RBI;
             }
         } else if cmd & CMD_ERX != 0 {
-            ctx.conf |= CNF_ERX;
-            ctx.stat |= STS_RXR;
+            debug!("Command: Enable RX");
+            port.enable_rx();
         }
 
         // Extra commands
         match (cmd >> 4) & 7 {
-            1 => ctx.mode_ptr = 0,
-            2 => {
-                ctx.stat |= STS_RXR;
-                ctx.conf |= CNF_ERX;
+            CR_RST_MR => {
+                debug!("PORT{}: Reset MR Pointer.", port_no);
+                port.mode_ptr = 0
             }
-            3 => {
-                ctx.stat |= STS_TXR;
-                ctx.stat |= STS_TXE;
-                ctx.conf &= !CNF_ETX;
+            CR_RST_RX => {
+                // Reset the channel's receiver as if a hardware reset
+                // had been performed. The receiver is disabled and
+                // the FIFO is flushed.
+                debug!("PORT{}: Reset RX.", port_no);
+                port.stat &= !STS_RXR;
+                port.conf &= !CNF_ERX;
+                port.rx_fifo.clear();
+                port.rx_shift_reg = None;
             }
-            4 => ctx.stat &= !(STS_FER | STS_PER | STS_OER),
+            CR_RST_TX => {
+                // Reset the channel's transmitter as if a hardware reset
+                // had been performed.
+                debug!("PORT{}: Reset TX.", port_no);
+                port.stat &= !(STS_TXR | STS_TXE);
+                port.conf &= !CNF_ETX;
+                port.tx_holding_reg = None;
+                port.tx_shift_reg = None;
+            }
+            CR_RST_ERR => {
+                debug!("PORT{}: Reset Error.", port_no);
+                port.stat &= !(STS_RXB | STS_FER | STS_PER | STS_OER);
+            }
+            CR_RST_BRK => {
+                // Reset the channel's Delta Break interrupt. Causes
+                // the channel's break detect change bit in the
+                // interrupt status register to be cleared to 0.
+                debug!("PORT{}: Reset Break Interrupt.", port_no);
+                self.isr &= !dbk_ists;
+            }
+            CR_START_BRK => {
+                debug!("PORT{}: Start Break.", port_no);
+                if port.loopback() {
+                    // We only care about a BREAK condition if it's
+                    // looping back to te receiver.
+                    //
+                    // TODO: We may want to expose a BREAK condition
+                    // to the outside world at some point.
+                    port.stat |= STS_RXB | STS_PER;
+                    // Set "Delta Break"
+                    self.isr |= dbk_ists;
+                }
+            }
+            CR_STOP_BRK => {
+                debug!("PORT{}: Stop Break.", port_no);
+                if port.loopback() {
+                    // We only care about a BREAK condition if it's
+                    // looping back to te receiver.
+                    //
+                    // Set "Delta Break"
+                    self.isr |= dbk_ists;
+                }
+            }
             _ => {}
         }
     }
@@ -431,40 +645,72 @@ impl Device for Duart {
                 let mut ctx = &mut self.ports[PORT_0];
                 let val = ctx.mode[ctx.mode_ptr];
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
+                debug!("READ : MR12A val={:02x}", val);
                 Ok(val)
             }
-            CSRA => Ok(self.ports[PORT_0].stat),
+            CSRA => {
+                let val = self.ports[PORT_0].stat;
+                debug!("READ : CSRA val={:02x}", val);
+                Ok(val)
+            }
             THRA => {
-                let mut ctx = &mut self.ports[PORT_0];
-                ctx.stat &= !STS_RXR;
-                self.istat &= !ISTS_RAI;
+                let ctx = &mut self.ports[PORT_0];
+                self.isr &= !ISTS_RAI;
                 self.ivec &= !RX_INT;
-                Ok(ctx.rx_data)
+                let val = if let Some(c) = ctx.rx_read_char() {
+                    c
+                } else {
+                    0
+                };
+                debug!("READ : RHRA val={:02x}", val);
+                Ok(val)
             }
             IPCR_ACR => {
-                let result = self.ipcr;
+                let val = self.ipcr;
                 self.ipcr &= !0x0f;
                 self.ivec = 0;
-                self.istat &= !ISTS_IPC;
-                Ok(result)
+                self.isr &= !ISTS_IPC;
+                debug!("READ : IPCR_ACR val={:02x}", val);
+                Ok(val)
             }
-            ISR_MASK => Ok(self.istat),
+            ISR_MASK => {
+                let val = self.isr;
+                debug!("READ : ISR_MASK val={:02x}", val);
+                Ok(val)
+            }
             MR12B => {
                 let mut ctx = &mut self.ports[PORT_1];
                 let val = ctx.mode[ctx.mode_ptr];
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
+                debug!("READ : MR12B val={:02x}", val);
                 Ok(val)
             }
-            CSRB => Ok(self.ports[PORT_1].stat),
-            THRB => {
-                let mut ctx = &mut self.ports[PORT_1];
-                ctx.stat &= !STS_RXR;
-                self.istat &= !ISTS_RBI;
-                self.ivec &= !KEYBOARD_INT;
-                Ok(ctx.rx_data)
+            CSRB => {
+                let val = self.ports[PORT_1].stat;
+                debug!("READ : CSRB val={:02x}", val);
+                Ok(val)
             }
-            IP_OPCR => Ok(self.inprt),
-            _ => Ok(0),
+            THRB => {
+                let ctx = &mut self.ports[PORT_1];
+                self.isr &= !ISTS_RAI;
+                self.ivec &= !KEYBOARD_INT;
+                let val = if let Some(c) = ctx.rx_read_char() {
+                    c
+                } else {
+                    0
+                };
+                debug!("READ : RHRB val={:02x}", val);
+                Ok(val)
+            }
+            IP_OPCR => {
+                let val = self.inprt;
+                debug!("READ : IP_OPCR val={:02x}", val);
+                Ok(val)
+            }
+            _ => {
+                debug!("READ : UNHANDLED. ADDRESS={:08x}", address);
+                Err(BusError::NoDevice(address))
+            }
         }
     }
 
@@ -481,70 +727,88 @@ impl Device for Duart {
     fn write_byte(&mut self, address: usize, val: u8, _access: AccessCode) -> Result<(), BusError> {
         match (address - START_ADDR) as u8 {
             MR12A => {
+                debug!("WRITE: MR12A, val={:02x}", val);
                 let mut ctx = &mut self.ports[PORT_0];
                 ctx.mode[ctx.mode_ptr] = val;
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
             }
             CSRA => {
+                debug!("WRITE: CSRA, val={:02x}", val);
                 let mut ctx = &mut self.ports[PORT_0];
                 ctx.char_delay = Duration::new(0, delay_rate(val, self.acr));
             }
             CRA => {
+                debug!("WRITE: CRA, val={:02x}", val);
                 self.handle_command(val, PORT_0);
             }
             THRA => {
+                debug!("WRITE: THRA, val={:02x}", val);
                 let mut ctx = &mut self.ports[PORT_0];
-                ctx.tx_data = Some(val);
+                ctx.tx_holding_reg = Some(val);
                 // Update state. Since we're transmitting, the
                 // transmitter buffer is not empty.  The actual
                 // transmit will happen in the 'service' function.
-                ctx.next_tx = Instant::now() + ctx.char_delay;
+                ctx.next_tx_service = Instant::now() + ctx.char_delay;
                 ctx.stat &= !(STS_TXE | STS_TXR);
-                self.istat &= !ISTS_TAI;
+                self.isr &= !ISTS_TAI;
                 self.ivec &= !TX_INT;
             }
             IPCR_ACR => {
+                debug!("WRITE: IPCR_ACR, val={:02x}", val);
                 self.acr = val;
+                // If we're changing the baud rate generator
+                // selection, update the character delays.
+                if (val & 0x80) != 0 {
+                    let mut ctx = &mut self.ports[PORT_0];
+                    ctx.char_delay = Duration::new(0, delay_rate(val, self.acr));
+                    let mut ctx = &mut self.ports[PORT_1];
+                    ctx.char_delay = Duration::new(0, delay_rate(val, self.acr));
+                }
             }
             ISR_MASK => {
+                debug!("WRITE: ISR_MASK, val={:02x}", val);
                 self.imr = val;
             }
             MR12B => {
+                debug!("WRITE: MR12B, val={:02x}", val);
                 let mut ctx = &mut self.ports[PORT_1];
                 ctx.mode[ctx.mode_ptr] = val;
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
             }
+            CSRB => {
+                debug!("WRITE: CSRB, val={:02x}", val);
+                let mut ctx = &mut self.ports[PORT_1];
+                ctx.char_delay = Duration::new(0, delay_rate(val, self.acr));
+            }
             CRB => {
+                debug!("WRITE: CRB, val={:02x}", val);
                 self.handle_command(val, PORT_1);
             }
             THRB => {
+                debug!("WRITE: THRB, val={:02x}", val);
                 // TODO: When OP3 is low, do not send data to
                 // the keyboard! It's meant for the printer.
-
-                // Keyboard transmit requires special handling,
-                // because the only things the terminal transmits to
-                // the keyboard are status requests, or keyboard beep
-                // requests. We ignore status requests, and only
-                // put beep requests into the queue.
                 let mut ctx = &mut self.ports[PORT_1];
-
-                if (val & 0x08) != 0 {
-                    ctx.tx_data = Some(val);
-                    ctx.next_tx = Instant::now() + ctx.char_delay;
-                    ctx.stat &= !(STS_TXE | STS_TXR);
-                    self.istat &= !ISTS_TBI;
-                }
+                ctx.tx_holding_reg = Some(val);
+                ctx.next_tx_service = Instant::now() + ctx.char_delay;
+                ctx.stat &= !(STS_TXE | STS_TXR);
+                self.isr &= !ISTS_TBI;
             }
             IP_OPCR => {
+                debug!("WRITE: IP_OPCR, val={:02x}", val);
                 // Not implemented
             }
             OPBITS_SET => {
+                debug!("WRITE: OPBITS_SET, val={:02x}", val);
                 self.outprt |= val;
             }
             OPBITS_RESET => {
+                debug!("WRITE: OPBITS_RESET, val={:02x}", val);
                 self.outprt &= !val;
             }
-            _ => {}
+            _ => {
+                debug!("WRITE: UNHANDLED. ADDRESS={:08x}", address);
+            }
         };
 
         Ok(())

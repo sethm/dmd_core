@@ -3,21 +3,23 @@
 use crate::bus::{AccessCode, Bus};
 use crate::cpu::Cpu;
 use crate::err::BusError;
-use crate::rom_hi::HI_ROM;
-use crate::rom_lo::LO_ROM;
+use crate::rom_hi::{HI_ROM_V1, HI_ROM_V2};
+use crate::rom_lo::{LO_ROM_V1, LO_ROM_V1_LEN, LO_ROM_V2, LO_ROM_V2_LEN};
 
 use libc::*;
-use std::sync::Mutex;
-use std::{ffi::CStr, ptr};
+use std::ptr;
+use std::sync::{Mutex, Once};
 
 lazy_static! {
-    static ref DMD: Mutex<Dmd> = Mutex::new(Dmd::new());
+    pub static ref DMD: Mutex<Dmd> = Mutex::new(Dmd::new());
 }
 
 // Return vlaues for the C library
 const SUCCESS: c_int = 0;
 const ERROR: c_int = 1;
 const BUSY: c_int = 2;
+
+static INIT: Once = Once::new();
 
 pub struct Dmd {
     cpu: Cpu,
@@ -26,12 +28,17 @@ pub struct Dmd {
 
 impl Default for Dmd {
     fn default() -> Self {
-        Dmd::new()
+        Self::new()
     }
 }
 
 impl Dmd {
     pub fn new() -> Dmd {
+        // Never re-init logging
+        INIT.call_once(|| {
+            env_logger::init();
+        });
+
         let cpu = Cpu::new();
         let bus = Bus::new(0x100000);
         Dmd {
@@ -40,17 +47,18 @@ impl Dmd {
         }
     }
 
-    pub fn trace_on(&mut self, name: &str) -> std::io::Result<()> {
-        self.bus.trace_on(name)
-    }
+    pub fn reset(&mut self, version: u8) -> Result<(), BusError> {
+        match version {
+            1 => {
+                self.bus.load(0, &LO_ROM_V1)?;
+                self.bus.load(LO_ROM_V1_LEN, &HI_ROM_V1)?;
+            }
+            _ => {
+                self.bus.load(0, &LO_ROM_V2)?;
+                self.bus.load(LO_ROM_V2_LEN, &HI_ROM_V2)?;
+            }
+        }
 
-    pub fn trace_off(&mut self) {
-        self.bus.trace_off()
-    }
-
-    pub fn reset(&mut self) -> Result<(), BusError> {
-        self.bus.load(0, &LO_ROM)?;
-        self.bus.load(0x10000, &HI_ROM)?;
         self.cpu.reset(&mut self.bus)?;
 
         Ok(())
@@ -100,20 +108,20 @@ impl Dmd {
         }
     }
 
-    pub fn rs232_tx_poll(&mut self) -> Option<u8> {
-        self.bus.rs232_tx_poll()
+    pub fn rs232_tx(&mut self) -> Option<u8> {
+        self.bus.rs232_tx()
     }
 
-    pub fn kb_tx_poll(&mut self) -> Option<u8> {
-        self.bus.kb_tx_poll()
+    pub fn keyboard_tx(&mut self) -> Option<u8> {
+        self.bus.keyboard_tx()
     }
 
-    pub fn rx_char(&mut self, character: u8) {
-        self.bus.rx_char(character);
+    pub fn rs232_rx(&mut self, c: u8) {
+        self.bus.rs232_rx(c);
     }
 
-    pub fn rx_keyboard(&mut self, keycode: u8) {
-        self.bus.rx_keyboard(keycode);
+    pub fn keyboard_rx(&mut self, keycode: u8) {
+        self.bus.keyboard_rx(keycode);
     }
 
     pub fn mouse_move(&mut self, x: u16, y: u16) {
@@ -146,9 +154,9 @@ impl Dmd {
 //
 
 #[no_mangle]
-fn dmd_reset() -> c_int {
+fn dmd_init(version: u8) -> c_int {
     match DMD.lock() {
-        Ok(mut dmd) => match dmd.reset() {
+        Ok(mut dmd) => match dmd.reset(version) {
             Ok(()) => SUCCESS,
             Err(_) => ERROR,
         },
@@ -169,37 +177,6 @@ fn dmd_step() -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {
             dmd.step();
-            SUCCESS
-        }
-        Err(_) => ERROR,
-    }
-}
-
-/// # Safety
-///
-/// Uses a raw pointer.
-///
-#[no_mangle]
-pub unsafe fn dmd_trace_on(file_name: *const c_char) -> c_int {
-    let file_name = CStr::from_ptr(file_name);
-
-    match DMD.lock() {
-        Ok(mut dmd) => match file_name.to_str() {
-            Ok(file_name) => match dmd.trace_on(file_name) {
-                Ok(()) => SUCCESS,
-                Err(_) => ERROR,
-            },
-            Err(_) => ERROR,
-        },
-        Err(_) => ERROR,
-    }
-}
-
-#[no_mangle]
-pub fn dmd_trace_off() -> c_int {
-    match DMD.lock() {
-        Ok(mut dmd) => {
-            dmd.trace_off();
             SUCCESS
         }
         Err(_) => ERROR,
@@ -279,28 +256,6 @@ fn dmd_get_duart_output_port(oport: &mut u8) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_rx_char(c: u8) -> c_int {
-    match DMD.lock() {
-        Ok(mut dmd) => {
-            dmd.rx_char(c as u8);
-            SUCCESS
-        }
-        Err(_) => ERROR,
-    }
-}
-
-#[no_mangle]
-fn dmd_rx_keyboard(c: u8) -> c_int {
-    match DMD.lock() {
-        Ok(mut dmd) => {
-            dmd.rx_keyboard(c);
-            SUCCESS
-        }
-        Err(_) => ERROR,
-    }
-}
-
-#[no_mangle]
 fn dmd_mouse_move(x: u16, y: u16) -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {
@@ -334,9 +289,31 @@ fn dmd_mouse_up(button: u8) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_rs232_tx_poll(tx_char: &mut u8) -> c_int {
+fn dmd_rs232_rx(c: u8) -> c_int {
     match DMD.lock() {
-        Ok(mut dmd) => match dmd.rs232_tx_poll() {
+        Ok(mut dmd) => {
+            dmd.rs232_rx(c as u8);
+            SUCCESS
+        }
+        Err(_) => ERROR,
+    }
+}
+
+#[no_mangle]
+fn dmd_keyboard_rx(c: u8) -> c_int {
+    match DMD.lock() {
+        Ok(mut dmd) => {
+            dmd.keyboard_rx(c);
+            SUCCESS
+        }
+        Err(_) => ERROR,
+    }
+}
+
+#[no_mangle]
+fn dmd_rs232_tx(tx_char: &mut u8) -> c_int {
+    match DMD.lock() {
+        Ok(mut dmd) => match dmd.rs232_tx() {
             Some(c) => {
                 *tx_char = c;
                 SUCCESS
@@ -348,9 +325,9 @@ fn dmd_rs232_tx_poll(tx_char: &mut u8) -> c_int {
 }
 
 #[no_mangle]
-fn dmd_kb_tx_poll(tx_char: &mut u8) -> c_int {
+fn dmd_keyboard_tx(tx_char: &mut u8) -> c_int {
     match DMD.lock() {
-        Ok(mut dmd) => match dmd.kb_tx_poll() {
+        Ok(mut dmd) => match dmd.keyboard_tx() {
             Some(c) => {
                 *tx_char = c;
                 SUCCESS
@@ -390,7 +367,7 @@ mod tests {
     #[test]
     fn creates_dmd() {
         let mut dmd = Dmd::new();
-        dmd.reset().unwrap();
+        dmd.reset(2).unwrap();
     }
 
     #[test]
