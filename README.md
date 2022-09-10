@@ -27,6 +27,9 @@ however.
 
 ## Changelog
 
+0.7.0: The simulated DMD 5620 can now run either 8;7;5 or 8;7;3
+       firmware.
+
 0.6.4: Tracing now shows correctly decoded instructions, plus raw
        bytes decoded from instruction stream. DUART delay calculation
        is improved. Effective address is now stored off onto
