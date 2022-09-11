@@ -27,6 +27,9 @@ however.
 
 ## Changelog
 
+0.7.1: This change fixes a critical bug in how the TX register status
+       bits are set.
+
 0.7.0: The simulated DMD 5620 can now run either 8;7;5 or 8;7;3
        firmware.
 
