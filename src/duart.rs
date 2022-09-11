@@ -756,14 +756,7 @@ impl Device for Duart {
             IPCR_ACR => {
                 debug!("WRITE: IPCR_ACR, val={:02x}", val);
                 self.acr = val;
-                // If we're changing the baud rate generator
-                // selection, update the character delays.
-                if (val & 0x80) != 0 {
-                    let mut ctx = &mut self.ports[PORT_0];
-                    ctx.char_delay = Duration::new(0, delay_rate(val, self.acr));
-                    let mut ctx = &mut self.ports[PORT_1];
-                    ctx.char_delay = Duration::new(0, delay_rate(val, self.acr));
-                }
+                // TODO: Update baud rate generator
             }
             ISR_MASK => {
                 debug!("WRITE: ISR_MASK, val={:02x}", val);
