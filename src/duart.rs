@@ -374,8 +374,8 @@ impl Default for Duart {
 }
 
 /// Compute the delay rate to wait for the next transmit or receive
-fn delay_rate(csr_bits: u8, acr_bits: u8) -> u32 {
-    const NS_PER_SEC: u32 = 1_100_000_000;
+fn delay_rate(csr_bits: u8, acr_bits: u8) -> Duration {
+    const NS_PER_SEC: u32 = 1_000_000_000;
     const BITS_PER_CHAR: u32 = 7;
 
     let baud_bits: usize = ((csr_bits >> 4) & 0xf) as usize;
@@ -385,7 +385,7 @@ fn delay_rate(csr_bits: u8, acr_bits: u8) -> u32 {
         BAUD_RATES_B[baud_bits]
     };
 
-    NS_PER_SEC / (baud_rate / BITS_PER_CHAR)
+    Duration::new(0, (NS_PER_SEC / (baud_rate / BITS_PER_CHAR)) / 2)
 }
 
 impl Duart {
@@ -735,7 +735,7 @@ impl Device for Duart {
             CSRA => {
                 debug!("WRITE: CSRA, val={:02x}", val);
                 let mut ctx = &mut self.ports[PORT_0];
-                ctx.char_delay = Duration::new(0, delay_rate(val, self.acr));
+                ctx.char_delay = delay_rate(val, self.acr);
             }
             CRA => {
                 debug!("WRITE: CRA, val={:02x}", val);
@@ -771,7 +771,7 @@ impl Device for Duart {
             CSRB => {
                 debug!("WRITE: CSRB, val={:02x}", val);
                 let mut ctx = &mut self.ports[PORT_1];
-                ctx.char_delay = Duration::new(0, delay_rate(val, self.acr));
+                ctx.char_delay = delay_rate(val, self.acr);
             }
             CRB => {
                 debug!("WRITE: CRB, val={:02x}", val);
