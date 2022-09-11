@@ -4,7 +4,7 @@ use crate::bus::{AccessCode, Bus};
 use crate::err::*;
 use crate::instr::*;
 
-use log::{debug, trace};
+use log::trace;
 use std::fmt;
 
 ///
@@ -1032,7 +1032,7 @@ impl Cpu {
         if let Some(val) = bus.get_interrupts() {
             let cpu_ipl = (self.r[R_PSW]) >> 13 & 0xf;
             if cpu_ipl < IPL_TABLE[(val & 0x3f) as usize] {
-                debug!(
+                trace!(
                     "[PC={:08x} PSW={:08x}] INTERRUPT 0x{:04x}",
                     &self.r[R_PC],
                     &self.r[R_PSW],
@@ -2002,7 +2002,7 @@ impl Cpu {
         match self.dispatch(bus) {
             Ok(i) => {
                 // We should have the necessary information to trace after dispatch.
-                trace!("[PC={:08x} PSW={:08x}] {}", &self.r[R_PC], &self.r[R_PSW], &self.ir);
+                // trace!("[PC={:08x} PSW={:08x}] {}", &self.r[R_PC], &self.r[R_PSW], &self.ir);
                 self.r[R_PC] = (self.r[R_PC] as i32 + i) as u32
             }
             Err(CpuError::Bus(BusError::NoDevice(_)))
