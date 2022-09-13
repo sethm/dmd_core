@@ -63,6 +63,7 @@ pub struct Bus {
     vid: Mem,   // TODO: Figure out what device this really is
     bbram: Mem, // TODO: change to BBRAM when implemented
     ram: Mem,
+    video_ram_dirty: bool,
 }
 
 impl Bus {
@@ -74,6 +75,7 @@ impl Bus {
             vid: Mem::new(0x500000, 0x2, false),
             bbram: Mem::new(0x600000, 0x2000, false),
             ram: Mem::new(0x700000, mem_size, false),
+            video_ram_dirty: false,
         }
     }
 
@@ -103,6 +105,18 @@ impl Bus {
         }
 
         Err(BusError::NoDevice(address))
+    }
+
+    fn video_ram_range(&self) -> Range<usize> {
+        let vid_register = (u16::from(self.vid[0]) << 8 | u16::from(self.vid[1])) as usize;
+        let start = vid_register * 4;
+        let end = start + 0x19000;
+        start..end
+    }
+
+    fn is_video_ram(&self, address: usize) -> bool {
+        (0x700000..0x800000).contains(&address)
+            && self.video_ram_range().contains(&(address - 0x700000))
     }
 
     pub fn read_byte(&mut self, address: usize, access: AccessCode) -> Result<u8, BusError> {
@@ -140,12 +154,18 @@ impl Bus {
     }
 
     pub fn write_byte(&mut self, address: usize, val: u8) -> Result<(), BusError> {
+        if self.is_video_ram(address) {
+            self.video_ram_dirty = true;
+        }
         self.get_device(address)?.write_byte(address, val, AccessCode::Write)
     }
 
     pub fn write_half(&mut self, address: usize, val: u16) -> Result<(), BusError> {
         if address & 1 != 0 {
             return Err(BusError::Alignment(address));
+        }
+        if self.is_video_ram(address) {
+            self.video_ram_dirty = true;
         }
         self.get_device(address)?.write_half(address, val, AccessCode::Write)
     }
@@ -154,6 +174,9 @@ impl Bus {
         if address & 3 != 0 {
             return Err(BusError::Alignment(address));
         }
+        if self.is_video_ram(address) {
+            self.video_ram_dirty = true;
+        }
         self.get_device(address)?.write_word(address, val, AccessCode::Write)
     }
 
@@ -161,11 +184,14 @@ impl Bus {
         self.get_device(address)?.load(address, data)
     }
 
-    pub fn video_ram(&self) -> &[u8] {
-        let vid_register = (u16::from(self.vid[0]) << 8 | u16::from(self.vid[1])) as usize;
-        let start = vid_register * 4;
-        let end = start + 0x19000;
-        self.ram.as_slice(start..end)
+    pub fn video_ram(&mut self) -> &[u8] {
+        self.video_ram_dirty = false;
+        let range = self.video_ram_range();
+        self.ram.as_slice(range)
+    }
+
+    pub fn video_ram_dirty(&self) -> bool {
+        self.video_ram_dirty
     }
 
     pub fn service(&mut self) {

@@ -64,8 +64,12 @@ impl Dmd {
         Ok(())
     }
 
-    pub fn video_ram(&self) -> &[u8] {
+    pub fn video_ram(&mut self) -> &[u8] {
         self.bus.video_ram()
+    }
+
+    pub fn video_ram_dirty(&self) -> bool {
+        self.bus.video_ram_dirty()
     }
 
     pub fn get_pc(&self) -> u32 {
@@ -167,8 +171,19 @@ fn dmd_init(version: u8) -> c_int {
 #[no_mangle]
 fn dmd_video_ram() -> *const u8 {
     match DMD.lock() {
-        Ok(dmd) => dmd.video_ram().as_ptr(),
+        Ok(mut dmd) => dmd.video_ram().as_ptr(),
         Err(_) => ptr::null(),
+    }
+}
+
+#[no_mangle]
+fn dmd_video_ram_dirty() -> c_int {
+    match DMD.lock() {
+        Ok(dmd) => match dmd.video_ram_dirty() {
+            true => 1,
+            false => 0,
+        },
+        Err(_) => 0,
     }
 }
 
