@@ -377,7 +377,7 @@ impl Default for Duart {
 /// Compute the delay rate to wait for the next transmit or receive
 fn delay_rate(csr_bits: u8, acr_bits: u8) -> Duration {
     const NS_PER_SEC: u32 = 1_000_000_000;
-    const BITS_PER_CHAR: u32 = 10;
+    const BITS_PER_CHAR: u32 = 8;
 
     let baud_bits: usize = ((csr_bits >> 4) & 0xf) as usize;
     let baud_rate = if acr_bits & 0x80 == 0 {
