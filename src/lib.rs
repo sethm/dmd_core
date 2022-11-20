@@ -1,13 +1,19 @@
-pub mod bus;
-pub mod cpu;
-pub mod dmd;
-pub mod duart;
-pub mod err;
-pub mod instr;
-pub mod mem;
-pub mod mouse;
-pub mod rom_hi;
-pub mod rom_lo;
+#[allow(unused)]
+mod bus;
+#[allow(unused)]
+mod cpu;
+#[allow(unused)]
+mod dmd;
+mod duart;
+#[allow(unused)]
+mod err;
+#[allow(unused)]
+mod instr;
+mod mem;
+mod mouse;
+mod rom_hi;
+mod rom_lo;
+mod utils;
 
 #[macro_use]
 extern crate lazy_static;

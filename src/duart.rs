@@ -38,10 +38,8 @@
 use crate::bus::{AccessCode, Device};
 use crate::err::BusError;
 
+use crate::utils::FifoQueue;
 use log::{debug, trace};
-use ringbuffer::{
-    ConstGenericRingBuffer, RingBuffer, RingBufferExt, RingBufferRead, RingBufferWrite,
-};
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt::Error;
@@ -141,14 +139,6 @@ const MOUSE_BLANK_INT: u8 = 0x02;
 const TX_INT: u8 = 0x10;
 const RX_INT: u8 = 0x20;
 
-// NB: The terrible Ring Buffer library requries capacities with a
-// power of 2, so we have to have extra logic to deal with this!
-//
-// TODO: Pick a new ring buffer library or just implement our own
-// 3-slot FIFO.
-const RX_FIFO_LEN: usize = 3;
-const RX_FIFO_INIT_LEN: usize = 4;
-
 struct Port {
     // Mode, Status, and Configuration registers
     mode: [u8; 2],
@@ -156,7 +146,7 @@ struct Port {
     stat: u8,
     conf: u8,
     // State used by the RX and TX state machines.
-    rx_fifo: ConstGenericRingBuffer<u8, RX_FIFO_INIT_LEN>,
+    rx_fifo: FifoQueue,
     rx_shift_reg: Option<u8>,
     tx_holding_reg: Option<u8>,
     tx_shift_reg: Option<u8>,
@@ -177,7 +167,7 @@ impl Port {
             mode_ptr: 0,
             stat: 0,
             conf: 0,
-            rx_fifo: ConstGenericRingBuffer::<u8, RX_FIFO_INIT_LEN>::new(),
+            rx_fifo: FifoQueue::new(),
             rx_shift_reg: None,
             tx_holding_reg: None,
             tx_shift_reg: None,
@@ -195,18 +185,20 @@ impl Port {
     /// slot. If a character is currently in the shift register, it is
     /// moved into the FIFO now that there is room.
     fn rx_read_char(&mut self) -> Option<u8> {
-        if self.rx_enabled() {
-            let val = self.rx_fifo.dequeue();
+        if !self.rx_enabled() {
+            return None;
+        }
 
+        if let Ok(val) = self.rx_fifo.pop() {
             // The FIFO is no longer full (even if only temporarily)
             self.stat &= !STS_FFL;
 
             // If the RX shift register held a character, it's time
             // to move it into the FIFO.
             if let Some(c) = self.rx_shift_reg {
-                self.rx_fifo.push(c);
+                let _ = self.rx_fifo.push(c);
                 self.stat |= STS_RXR;
-                if self.rx_fifo.len() >= RX_FIFO_LEN {
+                if self.rx_fifo.is_full() {
                     self.stat |= STS_FFL;
                 }
             }
@@ -219,7 +211,7 @@ impl Port {
             // Reset Parity Error and Received Break on read
             self.stat &= !(STS_PER | STS_RXB);
 
-            val
+            Some(val)
         } else {
             None
         }
@@ -233,9 +225,9 @@ impl Port {
     /// new character is received while the FIFO is full.
     fn rx_char(&mut self, c: u8) {
         trace!("rx_char: {:02x}, fifo_len={}", c, self.rx_fifo.len());
-        if self.rx_fifo.len() < RX_FIFO_LEN {
-            self.rx_fifo.push(c);
-            if self.rx_fifo.len() >= RX_FIFO_LEN {
+        if !self.rx_fifo.is_full() {
+            let _ = self.rx_fifo.push(c);
+            if self.rx_fifo.is_full() {
                 trace!("FIFO FULL.");
                 self.stat |= STS_FFL;
             }

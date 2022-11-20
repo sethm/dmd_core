@@ -14,7 +14,7 @@ lazy_static! {
     pub static ref DMD: Mutex<Dmd> = Mutex::new(Dmd::new());
 }
 
-// Return vlaues for the C library
+// Return values for the C library
 const SUCCESS: c_int = 0;
 const ERROR: c_int = 1;
 const BUSY: c_int = 2;
