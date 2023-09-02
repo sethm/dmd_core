@@ -2137,7 +2137,7 @@ impl Cpu {
         };
 
         match m {
-            0 | 1 | 2 | 3 => {
+            0..=3 => {
                 // Positive Literal
                 self.set_operand(
                     index,
@@ -3039,7 +3039,7 @@ mod tests {
             {
                 cpu.set_pc(BASE as u32);
                 cpu.decode_instruction(bus).unwrap();
-                let expected_operands = vec![
+                let expected_operands = [
                     Operand::new(2, AddrMode::Register, Data::Byte, Some(Data::SByte), Some(0), 0),
                     Operand::new(
                         3,
@@ -3057,7 +3057,7 @@ mod tests {
             {
                 cpu.set_pc((BASE + 6) as u32);
                 cpu.decode_instruction(bus).unwrap();
-                let expected_operands = vec![
+                let expected_operands = [
                     Operand::new(
                         2,
                         AddrMode::ByteDisplacementDeferred,

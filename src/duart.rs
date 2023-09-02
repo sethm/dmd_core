@@ -512,7 +512,7 @@ impl Duart {
     }
 
     fn handle_command(&mut self, cmd: u8, port_no: usize) {
-        let mut port = &mut self.ports[port_no];
+        let port = &mut self.ports[port_no];
 
         let (tx_ists, rx_ists, dbk_ists) = match port_no {
             PORT_0 => (ISTS_TAI, ISTS_RAI, ISTS_DBA),
@@ -636,7 +636,7 @@ impl Device for Duart {
     fn read_byte(&mut self, address: usize, _access: AccessCode) -> Result<u8, BusError> {
         match (address - START_ADDR) as u8 {
             MR12A => {
-                let mut ctx = &mut self.ports[PORT_0];
+                let ctx = &mut self.ports[PORT_0];
                 let val = ctx.mode[ctx.mode_ptr];
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
                 trace!("READ : MR12A, val={:02x}", val);
@@ -673,7 +673,7 @@ impl Device for Duart {
                 Ok(val)
             }
             MR12B => {
-                let mut ctx = &mut self.ports[PORT_1];
+                let ctx = &mut self.ports[PORT_1];
                 let val = ctx.mode[ctx.mode_ptr];
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
                 trace!("READ : MR12B, val={:02x}", val);
@@ -722,13 +722,13 @@ impl Device for Duart {
         match (address - START_ADDR) as u8 {
             MR12A => {
                 trace!("WRITE: MR12A, val={:02x}", val);
-                let mut ctx = &mut self.ports[PORT_0];
+                let ctx = &mut self.ports[PORT_0];
                 ctx.mode[ctx.mode_ptr] = val;
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
             }
             CSRA => {
                 trace!("WRITE: CSRA, val={:02x}", val);
-                let mut ctx = &mut self.ports[PORT_0];
+                let ctx = &mut self.ports[PORT_0];
                 ctx.char_delay = delay_rate(val, self.acr);
             }
             CRA => {
@@ -736,7 +736,7 @@ impl Device for Duart {
                 self.handle_command(val, PORT_0);
             }
             THRA => {
-                let mut ctx = &mut self.ports[PORT_0];
+                let ctx = &mut self.ports[PORT_0];
                 debug!("WRITE: THRA, val={:02x}", val);
                 ctx.tx_holding_reg = Some(val);
                 // TxRDY and TxEMT are both de-asserted on load.
@@ -754,13 +754,13 @@ impl Device for Duart {
             }
             MR12B => {
                 trace!("WRITE: MR12B, val={:02x}", val);
-                let mut ctx = &mut self.ports[PORT_1];
+                let ctx = &mut self.ports[PORT_1];
                 ctx.mode[ctx.mode_ptr] = val;
                 ctx.mode_ptr = (ctx.mode_ptr + 1) % 2;
             }
             CSRB => {
                 trace!("WRITE: CSRB, val={:02x}", val);
-                let mut ctx = &mut self.ports[PORT_1];
+                let ctx = &mut self.ports[PORT_1];
                 ctx.char_delay = delay_rate(val, self.acr);
             }
             CRB => {
@@ -771,7 +771,7 @@ impl Device for Duart {
                 debug!("WRITE: THRB, val={:02x}", val);
                 // TODO: When OP3 is low, do not send data to
                 // the keyboard! It's meant for the printer.
-                let mut ctx = &mut self.ports[PORT_1];
+                let ctx = &mut self.ports[PORT_1];
                 ctx.tx_holding_reg = Some(val);
                 // TxRDY and TxEMT are both de-asserted on load.
                 ctx.stat &= !(STS_TXR | STS_TXE);

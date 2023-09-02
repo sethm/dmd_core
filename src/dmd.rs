@@ -307,7 +307,7 @@ fn dmd_mouse_up(button: u8) -> c_int {
 fn dmd_rs232_rx(c: u8) -> c_int {
     match DMD.lock() {
         Ok(mut dmd) => {
-            dmd.rs232_rx(c as u8);
+            dmd.rs232_rx(c);
             SUCCESS
         }
         Err(_) => ERROR,
